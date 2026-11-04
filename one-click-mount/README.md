@@ -35,3 +35,7 @@ Open an issue with:
 - what you clicked, where you were, and what happened
 - the output of `/ocm debug`
 - any Lua error text (turn errors on with `/console scriptErrors 1`)
+
+## License
+
+MIT, see [LICENSE](../LICENSE).
