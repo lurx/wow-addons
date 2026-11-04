@@ -4,6 +4,14 @@ One action bar button that picks the right mount or movement spell for where you
 
 Created by Lurx.
 
+<p>
+  <img src="screenshots/general.png" alt="General tab: Flying, Ground and Combat rules, plus Shift, Ctrl and Alt modifiers" width="32%">
+  <img src="screenshots/locations.png" alt="Locations tab: Ahn'Qiraj, Undermine and Vashj'ir, plus a custom Silvermoon City rule" width="32%">
+  <img src="screenshots/hunter.png" alt="General tab on a Hunter: the combat spell switches to Aspect of the Cheetah automatically" width="32%">
+</p>
+
+*General tab · Locations tab · the same rules on a Hunter, where the combat spell switches to Aspect of the Cheetah by itself.*
+
 ## Install
 
 1. Download the latest zip from [Releases](../../releases), or copy the `OneClickMount` folder from this repo.
