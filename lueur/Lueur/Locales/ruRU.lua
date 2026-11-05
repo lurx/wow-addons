@@ -1,4 +1,5 @@
 -- Lueur : textes en russe, traduits par ZamestoTV
+-- EN: Lueur: Russian texts, translated by ZamestoTV
 local _, ns = ...
 
 local L = {}
@@ -18,6 +19,7 @@ L.COMMANDS = {}
 ---------------------------------------------------------------------------
 -- Catégories, états, effets
 ---------------------------------------------------------------------------
+-- EN: Categories, states, effects
 
 L.CATEGORY_ORE = "Руда"
 L.CATEGORY_ORE_TIP = "Жилы и месторождения."
@@ -35,6 +37,7 @@ L.CATEGORY_OTHER = "Другие объекты"
 L.CATEGORY_OTHER_TIP = "Повседневные объекты: двери, почтовые ящики, рычаги…"
 
 -- la catégorie d'un objet, dans une phrase du diagnostic
+-- EN: an object's category, in a diagnostic sentence
 L.NAME_ORE = "руда"
 L.NAME_HERB = "трава"
 L.NAME_LUMBER = "древесина"
@@ -45,6 +48,7 @@ L.NAME_OTHER = "прочее"
 L.NAME_NONE = "нет"
 
 -- l'objet que l'aperçu montre pour chaque catégorie
+-- EN: the object the preview shows for each category
 L.SAMPLE_ORE = "Медная жила"
 L.SAMPLE_HERB = "Мироцвет"
 L.SAMPLE_LUMBER = "Арденская древесина"
@@ -182,6 +186,7 @@ L.DEBUG = "Диагностика в чате"
 L.DEBUG_TIP = "Выводит в окно чата описание каждого выбранного объекта и то, как Lueur его обрабатывает."
 
 -- page de la minimap
+-- EN: minimap page
 L.NODES_PAGE = "Трава и руда на миникарте"
 L.HEADER_NODES = "Иконки на миникарте"
 L.HEADER_SWITCH = "Две собирательные профессии"
@@ -217,6 +222,7 @@ L.TIP_DRAG = "Перетаскивание: переместить эту кно
 ---------------------------------------------------------------------------
 -- Messages des commandes
 ---------------------------------------------------------------------------
+-- EN: Command messages
 
 L.MSG_ENABLED = "включено."
 L.MSG_DISABLED = "отключено, ваши исходные настройки восстановлены."
@@ -317,6 +323,7 @@ L.SCAN_NOTHING = "ничего (наведите указатель мыши н�
 ---------------------------------------------------------------------------
 -- Diagnostic (/lueur debug)
 ---------------------------------------------------------------------------
+-- EN: Diagnostics (/lueur debug)
 
 L.DEBUG_NO_TARGET = "цель взаимодействия больше не выбрана"
 L.DEBUG_PAUSED = "на паузе (идет бой или вы находитесь в подземелье)"
@@ -350,6 +357,7 @@ L.DEBUG_BEHIND = "позади камеры: %s"
 ---------------------------------------------------------------------------
 -- Aide (/lueur help). {réglage} : ses bornes ; {réglage=} : sa valeur par défaut
 ---------------------------------------------------------------------------
+-- EN: Help (/lueur help). {setting}: its bounds; {setting=}: its default value
 
 L.HELP_HEADER = "команды:"
 L.HELP = {

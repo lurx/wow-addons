@@ -1,28 +1,33 @@
 -- Lueur : textes en anglais
 -- C'est la langue de repli : un texte absent d'une autre langue s'affiche en anglais, et un
 -- client dont la langue n'a pas de fichier ici reçoit l'anglais.
+-- EN: Lueur: English texts. This is the fallback language: a text missing from another language is displayed in
+--     English, and a client whose language has no file here gets English.
 
 local _, ns = ...
 
 local L = {}
 ns.LOCALES.enUS = L
 
-L.LANGUAGE_NAME = "English"   -- le nom que cette langue se donne : c'est ainsi que le menu la propose
+L.LANGUAGE_NAME = "English"   -- le nom que cette langue se donne : c'est ainsi que le menu la propose | EN: the name this language gives itself: this is how the menu offers it
 L.PREFIX = "|cffffd200Lueur|r: "
 L.YES = "yes"
 L.NO = "no"
-L.SETTING = "%s: %s"          -- un réglage et sa valeur
+L.SETTING = "%s: %s"          -- un réglage et sa valeur | EN: a setting and its value
 L.FORMAT_PERCENT = "%d%%"
 L.FORMAT_RANGE = "%d yd"
-L.CONFIRM = "Confirm?"       -- sur un bouton qui attend un second geste
+L.CONFIRM = "Confirm?"       -- sur un bouton qui attend un second geste | EN: on a button awaiting a second action
 
 -- Mots de commande propres à cette langue -> nom anglais de la commande. Les noms anglais
 -- répondent partout ; les accents sont facultatifs.
+-- EN: Command words specific to this language -> English command name. The English names work everywhere; accents
+--     are optional.
 L.COMMANDS = {}
 
 ---------------------------------------------------------------------------
 -- Catégories, états, effets
 ---------------------------------------------------------------------------
+-- EN: Categories, states, effects
 
 L.CATEGORY_ORE = "Ore"
 L.CATEGORY_ORE_TIP = "Mineral veins and deposits."
@@ -40,6 +45,7 @@ L.CATEGORY_OTHER = "Other objects"
 L.CATEGORY_OTHER_TIP = "Everyday objects: doors, mailboxes, levers…"
 
 -- la catégorie d'un objet, dans une phrase du diagnostic
+-- EN: an object's category, in a diagnostic sentence
 L.NAME_ORE = "ore"
 L.NAME_HERB = "herb"
 L.NAME_LUMBER = "lumber"
@@ -50,6 +56,7 @@ L.NAME_OTHER = "other"
 L.NAME_NONE = "none"
 
 -- l'objet que l'aperçu montre pour chaque catégorie
+-- EN: the object the preview shows for each category
 L.SAMPLE_ORE = "Copper Vein"
 L.SAMPLE_HERB = "Peacebloom"
 L.SAMPLE_LUMBER = "Arden Lumber"
@@ -103,7 +110,7 @@ L.EFFECT = "Effect"
 L.EFFECT_TIP = "The shape of the light."
 L.LOOK_OF_ALL = "Appearance of all objects"
 L.LOOK_OF = "Appearance: %s"
-L.OF_CATEGORY = "%s (%s)"     -- un réglage, et la catégorie pour laquelle il vient de changer
+L.OF_CATEGORY = "%s (%s)"     -- un réglage, et la catégorie pour laquelle il vient de changer | EN: a setting, and the category for which it has just changed
 L.SHARED = "Same as all objects"
 L.SHARED_TIP = "Takes away this category's own effect and appearance: it goes back to those of all objects."
 
@@ -187,6 +194,7 @@ L.DEBUG = "Diagnostics in chat"
 L.DEBUG_TIP = "Describes in the chat window each object targeted and what Lueur makes of it."
 
 -- page de la minimap
+-- EN: minimap page
 L.NODES_PAGE = "Herbs and ore on the minimap"
 L.HEADER_NODES = "Minimap icons"
 L.HEADER_SWITCH = "Two gathering professions"
@@ -222,6 +230,7 @@ L.TIP_DRAG = "Drag: move this button"
 ---------------------------------------------------------------------------
 -- Messages des commandes
 ---------------------------------------------------------------------------
+-- EN: Command messages
 
 L.MSG_ENABLED = "enabled."
 L.MSG_DISABLED = "disabled, your original settings are restored."
@@ -322,6 +331,7 @@ L.SCAN_NOTHING = "nothing (put the pointer on a dot of the minimap and type the 
 ---------------------------------------------------------------------------
 -- Diagnostic (/lueur debug)
 ---------------------------------------------------------------------------
+-- EN: Diagnostics (/lueur debug)
 
 L.DEBUG_NO_TARGET = "no interaction target any more"
 L.DEBUG_PAUSED = "paused (combat or instance)"
@@ -355,6 +365,7 @@ L.DEBUG_BEHIND = "behind the camera: %s"
 ---------------------------------------------------------------------------
 -- Aide (/lueur help). {réglage} : ses bornes ; {réglage=} : sa valeur par défaut
 ---------------------------------------------------------------------------
+-- EN: Help (/lueur help). {setting}: its bounds; {setting=}: its default value
 
 L.HELP_HEADER = "commands:"
 L.HELP = {

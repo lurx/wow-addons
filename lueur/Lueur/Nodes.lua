@@ -15,43 +15,58 @@
 -- n'ont été recoupés avec aucun client. Un numéro ou un nom faux ne coûte qu'un nœud reconnu plus
 -- tard, à la première approche ; un nœud absent d'ici (ceux que Forever ajoute) a alors l'icône
 -- de son métier, sans couleur.
+-- EN: Lueur: ore veins and herbs. What Lueur knows about gathering nodes, in order to show them on the minimap
+--     (NodeScan.lua): the profession of each, the skill it requires and the item it yields, whose icon serves as its
+--     image. The minimap only gives a point's name, in the client's language: so we must go from the name to the
+--     node, without a list of English names. In order: 1. the name of an object the game has already designated as
+--     an ore vein or herb (Lueur.lua reports it via ns.LearnNode, with its ID when the game provides it); 2. the
+--     name of a herb, which is that of the item it yields: the client provides it; 3. the name of an ore vein,
+--     written here for the languages Lueur is translated into; 4. the name of a known node at the start or end of
+--     the name read (« Filon d'argent couvert de limon » (Ooze Covered Silver Vein)): for an ore vein, or for a herb
+--     that rule 1 has confirmed; 5. failing that, what rule 1 recorded: the profession alone, with no skill or item.
+--     The item IDs and skills are those of Classic; the Forever client cache (build 70338) confirms three of them:
+--     1731, 1618 and 1617. The German and Spanish ore vein names have not been cross-checked against any client. A
+--     wrong ID or name only costs a node recognised later, on first approach; a node missing from here (those
+--     Forever adds) then gets its profession's icon, without colour.
 
 local _, ns = ...
 local SafeCall, IsSecret, NameKey = ns.SafeCall, ns.IsSecret, ns.NameKey
 
 -- Plantes : compétence requise, objet donné, numéros du nœud
+-- EN: Herbs: required skill, item yielded, node IDs
 local HERBS = {
-	{ 1, 2447, 1618, 3724 },       -- Pacifique
-	{ 1, 765, 1617, 3725 },        -- Feuillargent
-	{ 15, 2449, 1619, 3726 },      -- Terrestrine
-	{ 50, 785, 1620, 3727 },       -- Mage royal
-	{ 70, 2450, 1621, 3729 },      -- Églantine
-	{ 85, 3820, 2045 },            -- Étouffante
-	{ 100, 2453, 1622, 3730 },     -- Doulourante
-	{ 115, 3355, 1623 },           -- Aciérite sauvage
-	{ 120, 3369, 1628 },           -- Tombeline
-	{ 125, 3356, 1624 },           -- Sang-royal
-	{ 150, 3357, 2041 },           -- Vietérule
-	{ 160, 3818, 2042 },           -- Pâlerette
-	{ 170, 3821, 2046 },           -- Dorépine
-	{ 185, 3358, 2043 },           -- Moustache de Khadgar
-	{ 195, 3819, 2044 },           -- Hivernale
-	{ 205, 4625, 2866 },           -- Fleur de feu
-	{ 210, 8831, 142140 },         -- Lotus pourpre
-	{ 220, 8836, 142141, 176642 }, -- Larmes d'Arthas
-	{ 230, 8838, 142142, 176636 }, -- Soleillette
-	{ 235, 8839, 142143, 183046 }, -- Aveuglette
-	{ 245, 8845, 142144 },         -- Champignon fantôme
-	{ 250, 8846, 142145, 176637 }, -- Gromsang
-	{ 260, 13464, 176583, 176638 }, -- Sansam doré
-	{ 270, 13463, 176584, 176639 }, -- Feuillerêve
-	{ 280, 13465, 176586, 176640 }, -- Sauge-argent des montagnes
-	{ 285, 13466, 176587, 176641 }, -- Fleur de peste
-	{ 290, 13467, 176588 },        -- Calot de glace
-	{ 300, 13468, 176589 },        -- Lotus noir
+	{ 1, 2447, 1618, 3724 },       -- Pacifique | EN: Pacifique (Peacebloom)
+	{ 1, 765, 1617, 3725 },        -- Feuillargent | EN: Feuillargent (Silverleaf)
+	{ 15, 2449, 1619, 3726 },      -- Terrestrine | EN: Terrestrine (Earthroot)
+	{ 50, 785, 1620, 3727 },       -- Mage royal | EN: Mage royal (Mageroyal)
+	{ 70, 2450, 1621, 3729 },      -- Églantine | EN: Églantine (Briarthorn)
+	{ 85, 3820, 2045 },            -- Étouffante | EN: Étouffante (Stranglekelp)
+	{ 100, 2453, 1622, 3730 },     -- Doulourante | EN: Doulourante (Bruiseweed)
+	{ 115, 3355, 1623 },           -- Aciérite sauvage | EN: Aciérite sauvage (Wild Steelbloom)
+	{ 120, 3369, 1628 },           -- Tombeline | EN: Tombeline (Grave Moss)
+	{ 125, 3356, 1624 },           -- Sang-royal | EN: Sang-royal (Kingsblood)
+	{ 150, 3357, 2041 },           -- Vietérule | EN: Vietérule (Liferoot)
+	{ 160, 3818, 2042 },           -- Pâlerette | EN: Pâlerette (Fadeleaf)
+	{ 170, 3821, 2046 },           -- Dorépine | EN: Dorépine (Goldthorn)
+	{ 185, 3358, 2043 },           -- Moustache de Khadgar | EN: Moustache de Khadgar (Khadgar's Whisker)
+	{ 195, 3819, 2044 },           -- Hivernale | EN: Hivernale (Wintersbite)
+	{ 205, 4625, 2866 },           -- Fleur de feu | EN: Fleur de feu (Firebloom)
+	{ 210, 8831, 142140 },         -- Lotus pourpre | EN: Lotus pourpre (Purple Lotus)
+	{ 220, 8836, 142141, 176642 }, -- Larmes d'Arthas | EN: Larmes d'Arthas (Arthas' Tears)
+	{ 230, 8838, 142142, 176636 }, -- Soleillette | EN: Soleillette (Sungrass)
+	{ 235, 8839, 142143, 183046 }, -- Aveuglette | EN: Aveuglette (Blindweed)
+	{ 245, 8845, 142144 },         -- Champignon fantôme | EN: Champignon fantôme (Ghost Mushroom)
+	{ 250, 8846, 142145, 176637 }, -- Gromsang | EN: Gromsang (Gromsblood)
+	{ 260, 13464, 176583, 176638 }, -- Sansam doré | EN: Sansam doré (Golden Sansam)
+	{ 270, 13463, 176584, 176639 }, -- Feuillerêve | EN: Feuillerêve (Dreamfoil)
+	{ 280, 13465, 176586, 176640 }, -- Sauge-argent des montagnes | EN: Sauge-argent des montagnes (Mountain Silversage)
+	{ 285, 13466, 176587, 176641 }, -- Fleur de peste | EN: Fleur de peste (Plaguebloom)
+	{ 290, 13467, 176588 },        -- Calot de glace | EN: Calot de glace (Icecap)
+	{ 300, 13468, 176589 },        -- Lotus noir | EN: Lotus noir (Black Lotus)
 }
 
 -- Filons : compétence requise, objet donné, nom du filon dans VEIN_NAMES, numéros du nœud
+-- EN: Ore veins: required skill, item yielded, ore vein name in VEIN_NAMES, node IDs
 local VEINS = {
 	{ 1, 2770, "copper", 1731, 2055, 3763, 103713 },
 	{ 65, 2771, "tin", 1732, 2054, 3764, 103711 },
@@ -71,6 +86,9 @@ local VEINS = {
 -- Le nom d'un filon n'est pas celui de son minerai, et le client ne le donne à un addon que devant
 -- le filon. Ils sont rangés par langue de client, comme les adjectifs de Locales.lua : ce sont des
 -- noms du jeu, pas des textes de Lueur.
+-- EN: An ore vein's name is not that of its ore, and the client only gives it to an addon when standing in front of
+--     the vein. They are grouped by client language, like the adjectives in Locales.lua: they are game names, not
+--     Lueur's texts.
 local VEIN_NAMES = {
 	enUS = {
 		copper = "Copper Vein", tin = "Tin Vein", incendicite = "Incendicite Mineral Vein", silver = "Silver Vein",
@@ -95,6 +113,7 @@ local VEIN_NAMES = {
 		darkiron = "Depósito de hierro negro", thorium = "Filón pequeño de torio", richthorium = "Filón de torio enriquecido",
 	},
 	-- noms de la base russe de Wowhead Classic (www.wowhead.com/classic/ru/object=<numéro>), le 2026-10-21
+	-- EN: names from the Russian Wowhead Classic database (www.wowhead.com/classic/ru/object=<ID>), on 2026-10-21
 	ruRU = {
 		copper = "Медная жила", tin = "Оловянная жила", incendicite = "Ароматитовая жила", silver = "Серебряная жила",
 		bloodstone = "Малое месторождение кровавого камня", iron = "Залежи железа", indurium = "Индарилиевая жила",
@@ -104,11 +123,12 @@ local VEIN_NAMES = {
 }
 local SAME_AS = { enGB = "enUS", esMX = "esES" }
 
-local SKILL_LINE = { herb = 182, ore = 186 }  -- Herboristerie et Minage dans les données du jeu
-local MAX_AFFIX = 28      -- ce qu'un nom peut porter de lettres en plus de celui du nœud qu'il contient
-local MAX_RESOLVED = 400  -- noms dont la réponse est gardée ; au-delà, on repart de zéro
+local SKILL_LINE = { herb = 182, ore = 186 }  -- Herboristerie et Minage dans les données du jeu | EN: Herbalism and Mining in the game data
+local MAX_AFFIX = 28      -- ce qu'un nom peut porter de lettres en plus de celui du nœud qu'il contient | EN: how many extra letters a name may carry beyond that of the node it contains
+local MAX_RESOLVED = 400  -- noms dont la réponse est gardée ; au-delà, on repart de zéro | EN: names whose answer is kept; beyond that, we start again from zero
 
 -- Couleurs de difficulté : celles du jeu quand il les expose, sinon leurs valeurs habituelles
+-- EN: Difficulty colours: the game's when it exposes them, otherwise their usual values
 local COLORS = {
 	impossible = { "IMPOSSIBLE_DIFFICULTY_COLOR", 1, 0.1, 0.1 },
 	difficult = { "DIFFICULT_DIFFICULTY_COLOR", 1, 0.5, 0.25 },
@@ -117,14 +137,14 @@ local COLORS = {
 	trivial = { "TRIVIAL_DIFFICULTY_COLOR", 0.5, 0.5, 0.5 },
 }
 
-local byId = {}           -- numéro d'objet -> nœud
-local byName = {}         -- nom replié -> nœud
-local pending = {}        -- objet dont le client n'a pas encore donné le nom -> la plante qui le donne
-local generic = { herb = { kind = "herb" }, ore = { kind = "ore" } }  -- nœud dont seul le métier est connu
-local resolved, resolvedCount = {}, 0  -- nom replié -> nœud, ou false : la réponse déjà trouvée
-local built = false       -- les noms ont-ils été demandés au client ?
-local skills = {}         -- métier -> { rank, total, name }, false si le jeu ne le dit pas ; vidé pour le relire
-local lastKind, lastTime  -- métier du dernier nœud que le jeu a désigné, et quand
+local byId = {}           -- numéro d'objet -> nœud | EN: item ID -> node
+local byName = {}         -- nom replié -> nœud | EN: folded name -> node
+local pending = {}        -- objet dont le client n'a pas encore donné le nom -> la plante qui le donne | EN: item whose name the client has not yet given -> the herb that yields it
+local generic = { herb = { kind = "herb" }, ore = { kind = "ore" } }  -- nœud dont seul le métier est connu | EN: node whose profession alone is known
+local resolved, resolvedCount = {}, 0  -- nom replié -> nœud, ou false : la réponse déjà trouvée | EN: folded name -> node, or false: the answer already found
+local built = false       -- les noms ont-ils été demandés au client ? | EN: have the names been requested from the client?
+local skills = {}         -- métier -> { rank, total, name }, false si le jeu ne le dit pas ; vidé pour le relire | EN: profession -> { rank, total, name }, false if the game does not say; cleared to re-read it
+local lastKind, lastTime  -- métier du dernier nœud que le jeu a désigné, et quand | EN: profession of the last node the game designated, and when
 
 local nodes = {}
 for _, entry in ipairs(HERBS) do
@@ -154,6 +174,7 @@ local function Index(name, node)
 end
 
 -- Nom d'un objet dans la langue du client ; nil tant que le client ne l'a pas en mémoire
+-- EN: Name of an item in the client's language; nil as long as the client does not have it in memory
 local function ItemName(item)
 	local name
 	if C_Item and C_Item.GetItemNameByID then
@@ -166,6 +187,8 @@ end
 
 -- Demande au client le nom de chaque nœud. Celui d'une plante peut manquer encore : le client le
 -- charge alors, et prévient par GET_ITEM_INFO_RECEIVED.
+-- EN: Asks the client for each node's name. A herb's name may still be missing: the client then loads it, and
+--     signals with GET_ITEM_INFO_RECEIVED.
 local function Build()
 	built = true
 	local veins = VEIN_NAMES[ClientLocale()] or {}
@@ -201,6 +224,7 @@ pcall(events.RegisterEvent, events, "GET_ITEM_INFO_RECEIVED")
 pcall(events.RegisterEvent, events, "SKILL_LINES_CHANGED")
 
 -- Noms appris dans la langue de ce client
+-- EN: Names learned in this client's language
 local function Learned(create)
 	local db = ns.db
 	if not db then return nil end
@@ -210,9 +234,11 @@ local function Learned(create)
 end
 
 -- Le nœud connu dont le nom ouvre ou ferme celui-ci, pour ce métier ; le plus long l'emporte
+-- EN: The known node whose name starts or ends this one, for this profession; the longest wins
 local function Variant(key, kind)
 	local best, length = nil, 0
 	-- l'ajout se compte en lettres : une lettre cyrillique tient deux octets
+	-- EN: the addition is counted in letters: a Cyrillic letter takes two bytes
 	local letters = select(2, key:gsub("[^\128-\191]", ""))
 	for known, node in pairs(byName) do
 		local size = #known
@@ -233,6 +259,8 @@ local function Resolve(key)
 	if node then return node end
 	-- le nom d'une plante est souvent un mot de tous les jours (« Pacifique ») : sa variante n'est
 	-- admise que si le jeu a déjà désigné cet objet comme une plante
+	-- EN: a herb's name is often an everyday word (« Pacifique » (Peaceful / Peacebloom)): its variant is only
+	--     accepted if the game has already designated this object as a herb
 	node = Variant(key, learned and learned.kind or "ore")
 	if node then return node end
 	return learned and generic[learned.kind] or nil
@@ -240,6 +268,8 @@ end
 
 -- Le nœud que désigne ce nom lu sur la minimap, ou nil si ce n'en est pas un. Un nœud a un
 -- métier (`kind`), et le plus souvent une compétence requise (`skill`) et un objet (`item`).
+-- EN: The node this name read on the minimap designates, or nil if it is not one. A node has a profession (`kind`),
+--     and usually a required skill (`skill`) and an item (`item`).
 function ns.NodeOf(name)
 	if IsSecret(name) or type(name) ~= "string" then return nil end
 	if not built then Build() end
@@ -255,6 +285,8 @@ end
 
 -- Le jeu vient de désigner cet objet comme un filon ou une plante (Lueur.lua) : son nom est
 -- retenu, avec son numéro s'il est lisible
+-- EN: The game has just designated this object as an ore vein or herb (Lueur.lua): its name is recorded, with its ID
+--     if readable
 function ns.LearnNode(name, id, category)
 	if not generic[category] or IsSecret(name) or type(name) ~= "string" then return end
 	lastKind, lastTime = category, GetTime()
@@ -269,11 +301,13 @@ function ns.LearnNode(name, id, category)
 end
 
 -- Métier du nœud que le jeu désignait il y a moins de `seconds` : celui que le joueur vient de récolter
+-- EN: Profession of the node the game designated less than `seconds` ago: the one the player has just gathered
 function ns.LastNodeKind(seconds)
 	if lastTime and GetTime() - lastTime <= seconds then return lastKind end
 end
 
 -- Image d'un nœud : l'icône de l'objet qu'il donne (un numéro de fichier), ou nil
+-- EN: Image of a node: the icon of the item it yields (a file ID), or nil
 function ns.NodeIcon(node)
 	if not node.icon and node.item then
 		local icon
@@ -289,12 +323,16 @@ end
 
 -- Compétence du joueur dans un métier de récolte : la sienne (`rank`), celle que lui donnent en
 -- plus sa race et son équipement (`total`), et le nom du métier ; nil si le jeu ne la dit pas
+-- EN: The player's skill in a gathering profession: their own (`rank`), the one their race and equipment add on top
+--     (`total`), and the profession's name; nil if the game does not say
 local function Skill(kind)
 	local skill = skills[kind]
 	if skill == nil then
 		skill = false
 		-- Retail : chaque extension a sa propre compétence de récolte, les seuils de Classic n'y
 		-- valent rien ; pas de difficulté plutôt qu'une fausse
+		-- EN: Retail: each expansion has its own gathering skill, Classic's thresholds are worthless there; no
+		--     difficulty rather than a wrong one
 		local retail = WOW_PROJECT_ID and WOW_PROJECT_MAINLINE and WOW_PROJECT_ID == WOW_PROJECT_MAINLINE
 		local info = not retail and C_SkillInfo and C_SkillInfo.GetSkillLineInfoByID and SafeCall(C_SkillInfo.GetSkillLineInfoByID, SKILL_LINE[kind])
 		if type(info) == "table" then
@@ -312,6 +350,7 @@ end
 ns.GatherSkill = Skill
 
 -- Fait relire la compétence au prochain besoin
+-- EN: Makes the skill be re-read the next time it is needed
 function ns.ForgetSkills()
 	skills = {}
 end
@@ -319,6 +358,9 @@ end
 -- Difficulté d'un nœud pour le joueur, du nom des couleurs du jeu : "impossible" (compétence
 -- insuffisante), "difficult", "fair", "easy", "trivial" ; nil si elle ne se sait pas. Les seuils
 -- des quatre dernières sont ceux de la récolte dans Classic (requis, +25, +50, +100).
+-- EN: Difficulty of a node for the player, named after the game's colours: "impossible" (insufficient skill),
+--     "difficult", "fair", "easy", "trivial"; nil if it cannot be known. The thresholds of the last four are those
+--     of gathering in Classic (required, +25, +50, +100).
 function ns.NodeDifficulty(node)
 	if not node.skill then return nil end
 	local skill = Skill(node.kind)
@@ -343,6 +385,8 @@ end
 
 -- Ce que le jeu écrirait d'un objet que le joueur ne peut pas utiliser (« Requiert Herboristerie
 -- (70) »), pour un nœud au-dessus de sa compétence ; nil pour tout autre
+-- EN: What the game would write for an item the player cannot use (« Requiert Herboristerie (70) » (Requires
+--     Herbalism (70))), for a node above their skill; nil for any other
 function ns.NodeRequirement(node)
 	if ns.NodeDifficulty(node) ~= "impossible" then return nil end
 	local skill = Skill(node.kind)

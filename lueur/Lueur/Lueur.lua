@@ -4,6 +4,11 @@
 -- nameplate une lueur unique, colorée selon le type d'objet (lu depuis son icône de curseur)
 -- et animée selon son état : hors de portée, à portée, indisponible. L'effet choisi
 -- (Effects.lua) décide de son dessin ; les textes viennent du dossier Locales.
+-- EN: Lueur: highlights the targeted interactive object (ore veins, herbs, quest objects). Principle: Blizzard's
+--     official "soft targeting" designates a single interaction target at any moment (the "softinteract" unit) and
+--     gives it a nameplate. Lueur attaches a single glow to that nameplate, colored by object type (read from its
+--     cursor icon) and animated by its state: out of range, in range, unavailable. The chosen effect (Effects.lua)
+--     decides how it is drawn; the texts come from the Locales folder.
 
 local ADDON_NAME, ns = ...
 local L = ns.L
@@ -14,68 +19,75 @@ local SOFT = "softinteract"
 local MEDIA = "Interface\\AddOns\\" .. ADDON_NAME .. "\\Media\\"
 local CURSORS = "Interface\\Cursor\\"
 local FALLBACK_TEXTURE = "Interface\\Cooldown\\star4"
-local SCHEMA = 8 -- version des réglages sauvegardés
+local SCHEMA = 8 -- version des réglages sauvegardés | EN: version of the saved settings
 
 -- Réglages communs à tous les personnages du compte (LueurDB)
+-- EN: Settings shared by all characters on the account (LueurDB)
 local DEFAULTS = {
 	enabled     = true,
-	range       = 15,     -- portée du soft targeting (mètres)
-	arc         = 2,      -- 0 = pile devant, 1 = devant, 2 = toutes directions
-	offsetY     = -45,    -- décalage vertical de la lueur par rapport à la nameplate (pixels)
-	size        = 120,    -- taille de la lueur (pixels, à l'échelle de la nameplate)
+	range       = 15,     -- portée du soft targeting (mètres) | EN: soft targeting range (meters)
+	arc         = 2,      -- 0 = pile devant, 1 = devant, 2 = toutes directions | EN: 0 = straight ahead, 1 = in front, 2 = all directions
+	offsetY     = -45,    -- décalage vertical de la lueur par rapport à la nameplate (pixels) | EN: vertical offset of the glow relative to the nameplate (pixels)
+	size        = 120,    -- taille de la lueur (pixels, à l'échelle de la nameplate) | EN: size of the glow (pixels, at nameplate scale)
 	effect      = "aura",
-	categorySettings = {}, -- catégorie -> ses réglages de personnalisation propres (voir LOOK)
-	colors      = {       -- couleur de la lueur de chaque catégorie
+	categorySettings = {}, -- catégorie -> ses réglages de personnalisation propres (voir LOOK) | EN: category -> its own customization settings (see LOOK)
+	colors      = {       -- couleur de la lueur de chaque catégorie | EN: glow color for each category
 		ore   = { 1.00, 0.60, 0.18 },
 		herb  = { 0.40, 1.00, 0.42 },
-		lumber = { 0.80, 0.55, 0.30 }, -- (port retail) le bois du logis, abattu à la hache
+		lumber = { 0.80, 0.55, 0.30 }, -- (port retail) le bois du logis, abattu à la hache | EN: (retail port) lumber for player housing, chopped with an axe
 		quest = { 1.00, 0.84, 0.15 },
 		chest = { 0.45, 0.78, 1.00 },
 		bobber = { 1.00, 0.45, 0.40 },
 		other = { 0.90, 0.90, 0.94 },
 	},
-	intensity   = 100,    -- luminosité de la lueur (%)
-	followAlpha = false,  -- la lueur s'estompe avec la nameplate (objet masqué par le décor…)
-	showName    = true,   -- nom de l'objet au-dessus de lui, écrit par Lueur à la place de celui du jeu
-	showIcon    = true,   -- et son icône d'interaction, au-dessus du nom
-	textSize    = 100,    -- taille de ce nom (% de celle de la police du jeu)
-	textFont    = "game", -- sa police : celle du jeu, ou l'une des autres polices du jeu (Locales.lua)
-	silhouette  = true,   -- la lueur passe derrière le personnage au lieu de le recouvrir
-	exclusive   = true,   -- le jeu ne met en avant (nameplate, icône) que les cibles mises en lumière
-	hideInCombat   = false,  -- pas de lueur en combat
-	hideInInstance = false,  -- ni en donjon, en raid ou en champ de bataille
-	hideLocked     = false,  -- ni sur un objet que le jeu refuse pour l'instant
-	hideUntrained  = true,   -- ni sur une plante ou un filon quand le personnage n'a pas le métier qui les récolte
+	intensity   = 100,    -- luminosité de la lueur (%) | EN: glow brightness (%)
+	followAlpha = false,  -- la lueur s'estompe avec la nameplate (objet masqué par le décor…) | EN: the glow fades with the nameplate (object hidden by scenery…)
+	showName    = true,   -- nom de l'objet au-dessus de lui, écrit par Lueur à la place de celui du jeu | EN: the object's name above it, written by Lueur in place of the game's
+	showIcon    = true,   -- et son icône d'interaction, au-dessus du nom | EN: and its interaction icon, above the name
+	textSize    = 100,    -- taille de ce nom (% de celle de la police du jeu) | EN: size of this name (% of the game font's size)
+	textFont    = "game", -- sa police : celle du jeu, ou l'une des autres polices du jeu (Locales.lua) | EN: its font: the game's, or one of the game's other fonts (Locales.lua)
+	silhouette  = true,   -- la lueur passe derrière le personnage au lieu de le recouvrir | EN: the glow goes behind the character instead of covering it
+	exclusive   = true,   -- le jeu ne met en avant (nameplate, icône) que les cibles mises en lumière | EN: the game only highlights (nameplate, icon) the targets Lueur highlights
+	hideInCombat   = false,  -- pas de lueur en combat | EN: no glow in combat
+	hideInInstance = false,  -- ni en donjon, en raid ou en champ de bataille | EN: nor in dungeons, raids or battlegrounds
+	hideLocked     = false,  -- ni sur un objet que le jeu refuse pour l'instant | EN: nor on an object the game currently refuses
+	hideUntrained  = true,   -- ni sur une plante ou un filon quand le personnage n'a pas le métier qui les récolte | EN: nor on an herb or ore vein when the character lacks the profession that gathers them
 	debug       = false,
-	language    = "auto",   -- langue des textes : "auto" (celle du client) ou le code d'une langue du dossier Locales
-	questObjects = {},    -- nom d'objet -> titre de sa quête, appris de son infobulle
-	ignored     = {},     -- nom d'objet replié -> son nom : objets que le joueur ne veut jamais voir briller
-	containers  = {},     -- numéro d'objet -> true : objets du décor que le joueur a déjà fouillés, rangés depuis parmi les coffres
-	minimap     = { hide = false, angle = 205 }, -- bouton de la minimap : masqué ou non, position (degrés)
-	nodeHerbs   = true,   -- sur la minimap, l'icône de chaque plante que le pistage du jeu y montre (NodeScan.lua)
-	nodeOre     = true,   -- et celle de chaque filon
-	nodeSize    = 12,     -- côté de ces icônes (unités de la minimap)
-	nodeNames   = {},     -- langue du client -> nom replié d'un filon ou d'une plante -> { kind, id }, appris en s'en approchant
+	language    = "auto",   -- langue des textes : "auto" (celle du client) ou le code d'une langue du dossier Locales | EN: text language: "auto" (the client's) or the code of a language in the Locales folder
+	questObjects = {},    -- nom d'objet -> titre de sa quête, appris de son infobulle | EN: object name -> title of its quest, learned from its tooltip
+	ignored     = {},     -- nom d'objet replié -> son nom : objets que le joueur ne veut jamais voir briller | EN: folded object name -> its name: objects the player never wants to see glow
+	containers  = {},     -- numéro d'objet -> true : objets du décor que le joueur a déjà fouillés, rangés depuis parmi les coffres | EN: object ID -> true: world objects the player has already looted, since filed among chests
+	minimap     = { hide = false, angle = 205 }, -- bouton de la minimap : masqué ou non, position (degrés) | EN: minimap button: hidden or not, position (degrees)
+	nodeHerbs   = true,   -- sur la minimap, l'icône de chaque plante que le pistage du jeu y montre (NodeScan.lua) | EN: on the minimap, the icon of each herb the game's tracking shows there (NodeScan.lua)
+	nodeOre     = true,   -- et celle de chaque filon | EN: and that of each ore vein
+	nodeSize    = 12,     -- côté de ces icônes (unités de la minimap) | EN: side length of these icons (minimap units)
+	nodeNames   = {},     -- langue du client -> nom replié d'un filon ou d'une plante -> { kind, id }, appris en s'en approchant | EN: client language -> folded name of an ore vein or herb -> { kind, id }, learned by approaching it
 }
 
 -- Réglages propres à chaque personnage (LueurCharDB) : ce qu'il récolte, et la découpe à sa taille
+-- EN: Per-character settings (LueurCharDB): what the character gathers, and the cutout fitted to its size
 local CHAR_DEFAULTS = {
 	categories  = { ore = true, herb = true, lumber = true, quest = true, chest = true, bobber = true, other = false },
-	bodyScale   = 100,    -- taille de la zone découpée autour du personnage (%)
-	bodyShift   = 0,      -- décalage vertical de cette zone (% de la hauteur du personnage)
-	nodeSwitch  = false,  -- deux métiers de récolte : Lueur allume tour à tour le pistage des plantes et celui des minerais
-	nodeSwitchYards = 15, -- distance parcourue entre deux de ces bascules (mètres)
+	bodyScale   = 100,    -- taille de la zone découpée autour du personnage (%) | EN: size of the cutout area around the character (%)
+	bodyShift   = 0,      -- décalage vertical de cette zone (% de la hauteur du personnage) | EN: vertical offset of this area (% of the character's height)
+	nodeSwitch  = false,  -- deux métiers de récolte : Lueur allume tour à tour le pistage des plantes et celui des minerais | EN: two gathering professions: Lueur alternately turns on herb tracking and mineral tracking
+	nodeSwitchYards = 15, -- distance parcourue entre deux de ces bascules (mètres) | EN: distance traveled between two of these switches (meters)
 }
 
 -- Réglages de personnalisation : chacun vaut pour tous les objets, sauf pour une catégorie qui
 -- a le sien dans db.categorySettings. La couleur, elle, n'existe que par catégorie (db.colors).
+-- EN: Customization settings: each applies to all objects, except for a category that has its own in
+--     db.categorySettings. Color, however, exists only per category (db.colors).
 local LOOK = { effect = true, size = true, intensity = true, offsetY = true, followAlpha = true, showName = true, showIcon = true, textSize = true, textFont = true,
 	silhouette = true }
 
 -- Bornes des réglages numériques, communes aux commandes et aux curseurs du menu
+-- EN: Bounds of the numeric settings, shared by the commands and the menu sliders
 local LIMITS = {
 	-- mesuré sur Forever 1.60.1 : la cible d'interaction se perd à 15 m, même avec 60 demandés ;
 	-- (port retail) jusqu'à 40 sur retail, pour mesurer où le jeu s'arrête
+	-- EN: measured on Forever 1.60.1: the interaction target is lost at 15 m, even with 60 requested; (retail port)
+	--     up to 40 on retail, to measure where the game stops
 	range     = { 5, (select(4, GetBuildInfo()) or 0) >= 120000 and 40 or 15 },
 	arc       = { 0, 2 },
 	offsetY   = { -200, 200 },
@@ -90,24 +102,30 @@ local LIMITS = {
 
 -- "chest" : ce qui se fouille (coffres, caisses, tonneaux) ; "bobber" : le flotteur de la ligne de pêche ;
 -- "other" : le reste (portes, boîtes aux lettres…)
+-- EN: "chest": things that can be searched (chests, crates, barrels); "bobber": the fishing bobber on the fishing
+--     line; "other": everything else (doors, mailboxes…)
 local CATEGORY_ORDER = { "ore", "herb", "lumber", "quest", "chest", "bobber", "other" }
 
 -- Styles du halo d'avant la version 0.5 -> effet qui les remplace
+-- EN: Halo styles from before version 0.5 -> the effect that replaces them
 local LEGACY_STYLES = { aura = "aura", reticule = "reticle", discret = "subtle" }
 
-local POLL_INTERVAL = 0.12   -- réévaluation de la cible et de son état (secondes)
-local APPEAR_TIME   = 0.45   -- la lueur arrive
-local BLEND_TIME    = 0.30   -- fondu entre deux états
-local FLASH_TIME    = 0.50   -- éclair du passage "à portée"
-local GHOST_TIME    = 0.40   -- dissipation quand la cible disparaît
-local STATE_DELAY   = 0.15   -- un état doit tenir ce temps avant d'être affiché (anti-scintillement)
-local LOCK_DELAY    = 0.60   -- idem pour "indisponible", confirmé plus prudemment
+local POLL_INTERVAL = 0.12   -- réévaluation de la cible et de son état (secondes) | EN: re-evaluation of the target and its state (seconds)
+local APPEAR_TIME   = 0.45   -- la lueur arrive | EN: the glow arrives
+local BLEND_TIME    = 0.30   -- fondu entre deux états | EN: crossfade between two states
+local FLASH_TIME    = 0.50   -- éclair du passage "à portée" | EN: flash when going "in range"
+local GHOST_TIME    = 0.40   -- dissipation quand la cible disparaît | EN: dissipation when the target disappears
+local STATE_DELAY   = 0.15   -- un état doit tenir ce temps avant d'être affiché (anti-scintillement) | EN: a state must hold for this long before being shown (anti-flicker)
+local LOCK_DELAY    = 0.60   -- idem pour "indisponible", confirmé plus prudemment | EN: same for "unavailable", confirmed more cautiously
 
 -- Pêche : le flotteur tombe souvent au-delà des 15 m où s'arrête le réglage de portée. Tant que
 -- la ligne est à l'eau, Lueur demande donc au jeu de chercher jusqu'à LINE_RANGE.
-local LINE_RANGE    = 60      -- mètres ; ni 25 ni 40 ne suffisaient toujours
-local FISHING_ICON  = 136245  -- Interface\Icons\Trade_Fishing : l'icône du sort de pêche, dans toutes les langues
+-- EN: Fishing: the fishing bobber often lands beyond the 15 m where the range setting stops. So while the line is in
+--     the water, Lueur asks the game to search up to LINE_RANGE.
+local LINE_RANGE    = 60      -- mètres ; ni 25 ni 40 ne suffisaient toujours | EN: meters; neither 25 nor 40 was always enough
+local FISHING_ICON  = 136245  -- Interface\Icons\Trade_Fishing : l'icône du sort de pêche, dans toutes les langues | EN: Interface\Icons\Trade_Fishing: the fishing spell's icon, in every language
 -- Numéro du flotteur dans les données du jeu (son GUID le porte) : le même pour toutes les lignes
+-- EN: ID of the fishing bobber in the game data (its GUID carries it): the same for every line
 local BOBBER_IDS    = { [35591] = true }
 
 -- Fichiers de curseur du jeu (Interface\Cursor\*.blp) -> catégorie. Les noms sont ceux que le
@@ -116,6 +134,10 @@ local BOBBER_IDS    = { [35591] = true }
 -- "service" : le curseur dit lui-même ce qu'est l'objet (une boîte aux lettres, et ce que le jeu
 -- montre d'ordinaire sur un PNJ). C'est un autre objet, que son nom ne range nulle part ailleurs :
 -- voir Classify.
+-- EN: Game cursor files (Interface\Cursor\*.blp) -> category. The names are those the Forever client knows (read
+--     from WowB.exe, build 70338), plus Fishing, which it lacks. A chest has no cursor of its own: see
+--     MatchContainer. "service": the cursor itself says what the object is (a mailbox, and what the game usually
+--     shows on an NPC). It is an "other" object, which its name does not file anywhere else: see Classify.
 local CURSOR_CATEGORY = {
 	Mine = "ore",
 	GatherHerbs = "herb",
@@ -131,41 +153,50 @@ local CURSOR_CATEGORY = {
 }
 
 -- Curseur que l'aperçu montre pour chaque catégorie, faute d'objet à qui le demander
+-- EN: Cursor the preview shows for each category, since there is no object to ask
 local SAMPLE_CURSOR = { ore = "Mine", herb = "GatherHerbs", quest = "Quest", chest = "Pickup", bobber = "Fishing", other = "Interact" }
 
 -- CVars que Lueur modifie (valeurs d'origine sauvegardées puis restaurées par /lueur off)
+-- EN: CVars that Lueur modifies (original values saved, then restored by /lueur off)
 local MANAGED_CVARS = {
 	"SoftTargetInteract", "SoftTargetNameplateInteract", "SoftTargetInteractRange", "SoftTargetInteractArc",
 	"SoftTargetInteractOnlyInRange", "SoftTargetInteractRangeIsHard", "SoftTargetIconInteract", "SoftTargetIconGameObject",
 	"nameplateGameObjectMaxDistance",
 	-- (port retail) marge haute des nameplates : le jeu les retient au bord de l'écran, ce qui
 	-- décroche celle d'un objet proche de l'objet lui-même
+	-- EN: (retail port) top inset of nameplates: the game holds them at the screen edge, which detaches a nearby
+	--     object's nameplate from the object itself
 	"nameplateOtherTopInset", "nameplateLargeTopInset",
 }
 -- Parmi elles, l'icône que le jeu pose sur la cible d'interaction
 -- SoftTargetIconGameObject est forcé à 1 quand la gate s'ouvre : sans icône, le jeu ne
 -- crée pas de nameplate pour les objets interactibles en soft target (Classic)
+-- EN: Among them, the icon the game places on the interaction target: SoftTargetIconGameObject is forced to 1 when
+--     the gate opens; without an icon, the game does not create a nameplate for interactable objects under soft
+--     target (Classic)
 local ICON_CVARS = { "SoftTargetIconInteract", "SoftTargetIconGameObject" }
 -- CVars que Lueur lit sans y toucher : /lueur status les montre, parce que la nameplate en dépend peut-être
+-- EN: CVars that Lueur reads without touching them: /lueur status shows them, because the nameplate may depend on
+--     them
 local WATCHED_CVARS = { "nameplateMaxDistance" }
 
-local db, cdb                -- réglages du compte, réglages du personnage
-local Evaluate               -- défini plus bas : met la lueur en accord avec la cible courante
-local UseLanguage            -- défini plus bas : sert textes et commandes dans la langue réglée
-local gateOpen               -- l'affichage natif de la cible est-il ouvert ? nil = à réappliquer
-local inCombat = false       -- entre PLAYER_REGEN_DISABLED et PLAYER_REGEN_ENABLED
-local cursorLookup = {}      -- fileID -> { catégorie, grisé }
-local activeUnits = {}       -- jeton nameplateN -> true
-local probe                  -- texture cachée servant à lire l'icône de curseur
+local db, cdb                -- réglages du compte, réglages du personnage | EN: account settings, character settings
+local Evaluate               -- défini plus bas : met la lueur en accord avec la cible courante | EN: defined below: brings the glow in line with the current target
+local UseLanguage            -- défini plus bas : sert textes et commandes dans la langue réglée | EN: defined below: provides texts and commands in the configured language
+local gateOpen               -- l'affichage natif de la cible est-il ouvert ? nil = à réappliquer | EN: is the target's native display open? nil = needs reapplying
+local inCombat = false       -- entre PLAYER_REGEN_DISABLED et PLAYER_REGEN_ENABLED | EN: between PLAYER_REGEN_DISABLED and PLAYER_REGEN_ENABLED
+local cursorLookup = {}      -- fileID -> { catégorie, grisé } | EN: fileID -> { category, grayed }
+local activeUnits = {}       -- jeton nameplateN -> true | EN: nameplateN token -> true
+local probe                  -- texture cachée servant à lire l'icône de curseur | EN: hidden texture used to read the cursor icon
 local pendingCVars = false
-local leaving = false        -- déconnexion en cours : les CVars sont rendues, plus rien ne doit y toucher
-local directWorks = false    -- GetNamePlateForUnit("softinteract") a déjà abouti pour un objet
-local lineOut = false        -- la ligne de pêche du joueur est à l'eau, et son flotteur fait partie des objets mis en lumière
-local lastReport             -- dernière ligne de debug affichée (évite les répétitions)
+local leaving = false        -- déconnexion en cours : les CVars sont rendues, plus rien ne doit y toucher | EN: logout in progress: the CVars have been restored, nothing must touch them anymore
+local directWorks = false    -- GetNamePlateForUnit("softinteract") a déjà abouti pour un objet | EN: GetNamePlateForUnit("softinteract") has already succeeded for an object
+local lineOut = false        -- la ligne de pêche du joueur est à l'eau, et son flotteur fait partie des objets mis en lumière | EN: the player's fishing line is in the water, and its fishing bobber is among the highlighted objects
+local lastReport             -- dernière ligne de debug affichée (évite les répétitions) | EN: last debug line printed (avoids repeats)
 
-local glow = { layers = {} }  -- cadre unique de la lueur, état de son animation, couches de tous ses effets
-local ghost                   -- cadre de dissipation
-local label                   -- nom et icône de l'objet, au-dessus de la lueur
+local glow = { layers = {} }  -- cadre unique de la lueur, état de son animation, couches de tous ses effets | EN: the single glow frame, its animation state, the layers of all its effects
+local ghost                   -- cadre de dissipation | EN: dissipation frame
+local label                   -- nom et icône de l'objet, au-dessus de la lueur | EN: object name and icon, above the glow
 
 local sin, min, max = math.sin, math.min, math.max
 local TWO_PI = 2 * math.pi
@@ -206,11 +237,13 @@ local function Approach(value, target, step)
 end
 
 -- Table où vit un réglage : celle du personnage, ou celle du compte
+-- EN: Table where a setting lives: the character's, or the account's
 local function Store(key)
 	return CHAR_DEFAULTS[key] ~= nil and cdb or db
 end
 
 -- Couleur d'une catégorie : trois composantes
+-- EN: Color of a category: three components
 local function Color(category)
 	local color = db.colors[category] or db.colors.other
 	return color[1], color[2], color[3]
@@ -218,6 +251,8 @@ end
 
 -- Valeur d'un réglage de personnalisation pour une catégorie : la sienne, sinon celle de tous
 -- les objets ; sans catégorie, celle de tous les objets
+-- EN: Value of a customization setting for a category: its own, otherwise the one for all objects; with no category,
+--     the one for all objects
 local function Look(category, key)
 	local own = category and db.categorySettings[category]
 	local value = own and own[key]
@@ -228,6 +263,8 @@ end
 -- Minuscules sans accents : commandes, noms d'effets et noms d'objets se tapent avec ou sans.
 -- string.lower ne connaît que l'ASCII : les majuscules latines accentuées et cyrilliques passent
 -- par cette table.
+-- EN: Lowercase without accents: commands, effect names and object names can be typed with or without them.
+--     string.lower only knows ASCII: accented Latin and Cyrillic capitals go through this table.
 local ACCENTS = {
 	["à"] = "a", ["â"] = "a", ["ä"] = "a", ["á"] = "a", ["ç"] = "c", ["é"] = "e", ["è"] = "e", ["ê"] = "e", ["ë"] = "e",
 	["î"] = "i", ["ï"] = "i", ["í"] = "i", ["ô"] = "o", ["ö"] = "o", ["ó"] = "o", ["ù"] = "u", ["û"] = "u", ["ü"] = "u",
@@ -237,6 +274,8 @@ local ACCENTS = {
 }
 -- cyrillique : А-П (208 144-159) donnent а-п (208 176-191), Р-Я (208 160-175) donnent р-я
 -- (209 128-143) ; Ё et ё s'écrivent е, comme le font souvent les textes du jeu
+-- EN: Cyrillic: А-П (208 144-159) become а-п (208 176-191), Р-Я (208 160-175) become р-я (209 128-143); Ё and ё are
+--     written е, as the game's texts often do
 for byte = 144, 175 do
 	ACCENTS["\208" .. string.char(byte)] = byte < 160 and "\208" .. string.char(byte + 32) or "\209" .. string.char(byte - 32)
 end
@@ -247,16 +286,19 @@ local function Fold(text)
 end
 
 -- Noms affichés, relus à chaque usage : la langue peut changer en cours de jeu
+-- EN: Display names, re-read on every use: the language can change during play
 local function EffectLabel(key)
 	return L["EFFECT_" .. key:upper()]
 end
 
 -- Nom d'une catégorie dans le menu
+-- EN: Name of a category in the menu
 local function CategoryLabel(category)
 	return L["CATEGORY_" .. category:upper()]
 end
 
 -- Nom d'une catégorie, ou de son absence, dans une phrase du diagnostic
+-- EN: Name of a category, or of its absence, in a diagnostic sentence
 local function CategoryName(category)
 	return L["NAME_" .. (category or "none"):upper()]
 end
@@ -275,6 +317,7 @@ local function GetCVarValue(name)
 end
 
 -- Ne touche qu'aux CVars que ce client connaît (la liste varie d'une version à l'autre)
+-- EN: Only touches the CVars this client knows (the list varies from one version to another)
 local function SetCVarValue(name, value)
 	if GetCVarValue(name) == nil then return end
 	pcall(C_CVar and C_CVar.SetCVar or SetCVar, name, tostring(value))
@@ -284,9 +327,14 @@ end
 -- icône. En mode exclusif, Lueur ne l'ouvre que pour une cible mise en lumière : PNJ,
 -- cadavres, boîtes aux lettres et autres restent utilisables avec la touche d'interaction,
 -- mais le jeu ne les met plus en avant.
+-- EN: Native display of the interaction target: its nameplate, where the glow attaches, and its icon. In exclusive
+--     mode, Lueur only opens it for a highlighted target: NPCs, corpses, mailboxes and others remain usable with the
+--     interact key, but the game no longer highlights them.
 local function EnsureIconCVars()
 	-- Le client beta écrase SoftTargetIconGameObject à 0 après PLAYER_ENTERING_WORLD
 	-- On le répare ici, avant que Evaluate() ne cherche la nameplate
+	-- EN: The beta client overwrites SoftTargetIconGameObject to 0 after PLAYER_ENTERING_WORLD. We fix it here,
+	--     before Evaluate() looks for the nameplate
 	if gateOpen == true then
 		local current = GetCVarValue("SoftTargetIconGameObject")
 		if current ~= "1" then SetCVarValue("SoftTargetIconGameObject", 1) end
@@ -302,6 +350,7 @@ local function SetGate(open)
 	gateOpen = open
 	SetCVarValue("SoftTargetNameplateInteract", open and 1 or 0)
 	-- SoftTargetIconGameObject doit être 1 pour que le jeu crée des nameplates pour les game objects
+	-- EN: SoftTargetIconGameObject must be 1 for the game to create nameplates for game objects
 	if open then SetCVarValue("SoftTargetIconGameObject", 1) end
 	for _, name in ipairs(ICON_CVARS) do
 		if name ~= "SoftTargetIconGameObject" then
@@ -312,11 +361,13 @@ local function SetGate(open)
 end
 
 -- Portée à demander au jeu : celle du réglage, ou celle qu'il faut pour atteindre le flotteur
+-- EN: Range to request from the game: the setting's, or the one needed to reach the fishing bobber
 local function WantedRange()
 	return lineOut and LINE_RANGE or db.range
 end
 
 -- Le client porte-t-il les valeurs que Lueur applique ? C'est qu'elles ne lui ont pas été rendues.
+-- EN: Does the client hold the values Lueur applies? If so, they were not restored to it.
 local function CVarsLookApplied()
 	local onlyInRange = GetCVarValue("SoftTargetInteractOnlyInRange")
 	local range = tonumber(GetCVarValue("SoftTargetInteractRange"))
@@ -329,6 +380,8 @@ local function ApplyCVars()
 	if db.cvarsReturned then
 		-- rendues au jeu à la dernière déconnexion : ce que le client porte maintenant, ce sont les
 		-- valeurs du joueur, qu'il a pu changer depuis. On les relit, sauf si ce sont les nôtres.
+		-- EN: restored to the game at the last logout: what the client holds now are the player's values, which they
+		--     may have changed since. We re-read them, unless they are ours.
 		db.cvarsReturned = nil
 		if not CVarsLookApplied() then db.savedCVars = nil end
 	end
@@ -338,22 +391,28 @@ local function ApplyCVars()
 			db.savedCVars[name] = GetCVarValue(name) or false
 		end
 	end
-	SetCVarValue("SoftTargetInteract", 3)          -- soft target d'interaction toujours actif
+	SetCVarValue("SoftTargetInteract", 3)          -- soft target d'interaction toujours actif | EN: interaction soft target always active
 	SetCVarValue("SoftTargetInteractRange", WantedRange())
-	SetCVarValue("SoftTargetInteractArc", db.arc)    -- angle de recherche autour du joueur
-	SetCVarValue("SoftTargetInteractOnlyInRange", 0) -- détecter aussi hors de portée d'interaction
+	SetCVarValue("SoftTargetInteractArc", db.arc)    -- angle de recherche autour du joueur | EN: search angle around the player
+	SetCVarValue("SoftTargetInteractOnlyInRange", 0) -- détecter aussi hors de portée d'interaction | EN: also detect beyond interaction range
 	-- la portée demandée ne doit pas écarter ce avec quoi le joueur peut interagir d'où il est,
 	-- comme le flotteur de sa ligne de pêche
+	-- EN: the requested range must not exclude what the player can interact with from where they stand, such as the
+	--     fishing bobber on their line
 	SetCVarValue("SoftTargetInteractRangeIsHard", 0)
 	-- la lueur s'accroche à la nameplate de l'objet : le jeu doit la montrer aussi loin qu'il le
 	-- désigne, donc jusqu'au flotteur. Le joueur qui la montre plus loin encore garde sa valeur.
+	-- EN: the glow attaches to the object's nameplate: the game must show it as far away as it targets, so out to
+	--     the fishing bobber. A player who shows it even farther keeps their value.
 	SetCVarValue("nameplateGameObjectMaxDistance", max(tonumber(db.savedCVars.nameplateGameObjectMaxDistance) or 0, LINE_RANGE))
 	-- (port retail) -1 : plus de bord, la nameplate suit son objet jusque hors de l'écran
+	-- EN: (retail port) -1: no more edge, the nameplate follows its object even off screen
 	if (select(4, GetBuildInfo()) or 0) >= 120000 then
 		SetCVarValue("nameplateOtherTopInset", -1)
 		SetCVarValue("nameplateLargeTopInset", -1)
 	end
 	-- la nameplate et l'icône de la cible dépendent de ce qui est visé
+	-- EN: the target's nameplate and icon depend on what is targeted
 	gateOpen = nil
 	Evaluate()
 end
@@ -361,6 +420,8 @@ end
 -- La portée seule, quand la ligne de pêche entre dans l'eau ou en sort. Renvoie false quand il
 -- n'y a rien à écrire, parce que Lueur ne tient pas les CVars du jeu : désactivé, ou pas encore
 -- passé par ApplyCVars.
+-- EN: Range only, when the fishing line enters or leaves the water. Returns false when there is nothing to write,
+--     because Lueur is not holding the game's CVars: disabled, or not yet through ApplyCVars.
 local function ApplyRange()
 	if not db.enabled or not db.savedCVars or db.cvarsReturned then return false end
 	if InCombatLockdown() then
@@ -384,6 +445,8 @@ end
 -- À la déconnexion, le jeu retrouve ses valeurs d'origine : désactiver ou désinstaller Lueur
 -- depuis la liste des addons ne laisse rien derrière lui. Elles restent en mémoire pour le
 -- cas où le client ne les enregistrerait pas (fermeture brutale).
+-- EN: On logout, the game gets its original values back: disabling or uninstalling Lueur from the addon list leaves
+--     nothing behind. They stay in memory in case the client fails to save them (crash).
 local function ReturnCVars()
 	if not db.enabled or not db.savedCVars or InCombatLockdown() then return end
 	for name, value in pairs(db.savedCVars) do
@@ -396,6 +459,8 @@ end
 -- Les versions 0.1.x pouvaient mémoriser comme valeurs d'origine celles que Lueur venait
 -- lui-même d'appliquer : /lueur off ne rendait alors rien. Quand la sauvegarde porte cette
 -- signature, on lui substitue les valeurs par défaut du client.
+-- EN: Versions 0.1.x could record as original values the ones Lueur had just applied itself: /lueur off then
+--     restored nothing. When the saved data bears that signature, the client's default values are substituted.
 local function RepairSavedCVars()
 	local saved = db.savedCVars
 	if not saved or not (C_CVar and C_CVar.GetCVarDefault) then return end
@@ -431,13 +496,18 @@ local QUEST_LINE_TYPE = Enum and Enum.TooltipDataLineType and Enum.TooltipDataLi
 -- que son infobulle a déjà révélé, son nom dans le texte d'un objectif ("Scie détrempée :
 -- 0/1"), ou un mot marquant en commun avec un objet à ramasser ("Tas de camelote" pour
 -- "Camelote rutilante"). Noms et objectifs sont ceux du client, dans sa langue.
-local questTexts = {}      -- objectifs inachevés : { text = minuscules sans compteur, pickable = objet à ramasser ou à utiliser }
-local questTitles = {}     -- titre normalisé de chaque quête en cours -> true
+-- EN: An object to pick up for a quest carries a generic cursor, and the per-unit quest API does not recognize them
+--     all. So it is tied to an active quest by, in order: what its tooltip has already revealed, its name in an
+--     objective's text ("Scie détrempée : 0/1" (Waterlogged Saw: 0/1)), or a notable word shared with an object to
+--     pick up ("Tas de camelote" (Pile of Junk) for "Camelote rutilante" (Shiny Junk)). Names and objectives are the
+--     client's, in its language.
+local questTexts = {}      -- objectifs inachevés : { text = minuscules sans compteur, pickable = objet à ramasser ou à utiliser } | EN: unfinished objectives: { text = lowercase without counter, pickable = object to pick up or use }
+local questTitles = {}     -- titre normalisé de chaque quête en cours -> true | EN: normalized title of each active quest -> true
 local questsDirty = true
 
 local function NormalizeText(text)
-	text = text:lower():gsub("\194\160", " ")  -- espace insécable (typographie française)
-	text = text:gsub("\226\128\153", "'")      -- apostrophe typographique
+	text = text:lower():gsub("\194\160", " ")  -- espace insécable (typographie française) | EN: non-breaking space (French typography)
+	text = text:gsub("\226\128\153", "'")      -- apostrophe typographique | EN: typographic apostrophe
 	text = text:gsub("%d+%s*/%s*%d+", "")
 	text = text:gsub("^[%s:%-]+", ""):gsub("[%s:%-]+$", "")
 	return text
@@ -446,11 +516,16 @@ end
 -- Adjectifs trop répandus pour rapprocher à eux seuls un objet d'un objectif : ceux de la
 -- langue du client, qui est celle des noms et des objectifs, pas ceux de la langue affichée.
 -- Ils passent par la même mise en forme que les noms auxquels ils seront comparés.
+-- EN: Adjectives too common to link an object to an objective on their own: those of the client language, which is
+--     the language of the names and objectives, not those of the displayed language. They go through the same
+--     formatting as the names they will be compared with.
 local COMMON_WORDS = {}
 for word in NormalizeText(ns.CommonWords()):gmatch("%S+") do COMMON_WORDS[word] = true end
 
 -- Clé d'un nom d'objet dans la liste des objets ignorés : il s'y retrouve tapé avec ou sans
 -- accents. Les accents se replient avant le passage en minuscules, qui ne sait rien d'eux.
+-- EN: Key of an object name in the ignored-objects list: it matches whether typed with or without accents. Accents
+--     are folded before lowercasing, which knows nothing about them.
 local function NameKey(name)
 	name = name:gsub("\194\160", " "):gsub("\226\128\153", "'")
 	return (Fold(name):gsub("^%s+", ""):gsub("%s+$", ""))
@@ -489,6 +564,7 @@ local function RebuildQuestTexts()
 end
 
 -- Renvoie un mot marquant de `source` qui commence aussi un mot de `target`
+-- EN: Returns a notable word from `source` that also begins a word of `target`
 local function SharedWord(source, target)
 	target = " " .. target:gsub("%p", " ")
 	for word in source:gmatch("[^%s%p]+") do
@@ -497,6 +573,7 @@ local function SharedWord(source, target)
 end
 
 -- Renvoie ce qui rattache ce nom d'objet à une quête en cours (affiché par le debug), ou nil
+-- EN: Returns what links this object name to an active quest (shown by debug), or nil
 local function MatchQuestObjective(name)
 	if type(name) ~= "string" or #name < 4 then return nil end
 	if questsDirty then RebuildQuestTexts() end
@@ -505,10 +582,13 @@ local function MatchQuestObjective(name)
 	for _, objective in ipairs(questTexts) do
 		local text = objective.text
 		-- "scie détrempée" dans l'objectif, ou l'objectif ("fournitures") dans le nom de l'objet
+		-- EN: "scie détrempée" (waterlogged saw) in the objective, or the objective ("fournitures" (supplies)) in
+		--     the object's name
 		if text:find(name, 1, true) or (#text >= 5 and name:find(text, 1, true)) then return L.MATCH_NAME end
 	end
 	for _, objective in ipairs(questTexts) do
 		-- jamais avec un objectif d'élimination : "Hutte murloc" n'est pas un "Murloc tué"
+		-- EN: never with a kill objective: "Hutte murloc" (Murloc Hut) is not a "Murloc tué" (Murloc slain)
 		if objective.pickable then
 			local word = SharedWord(name, objective.text) or SharedWord(objective.text, name)
 			if word then return L.MATCH_WORD:format(word) end
@@ -519,6 +599,9 @@ end
 -- L'infobulle d'un objet de quête nomme sa quête. Quand le jeu en montre une (survol à la
 -- souris, ou infobulle de la cible d'interaction si tu l'as activée), on retient le nom de
 -- l'objet : c'est le seul lien sûr quand ce nom n'a rien de commun avec l'objectif.
+-- EN: A quest object's tooltip names its quest. When the game shows one (mouseover, or the interaction target's
+--     tooltip if you enabled it), we remember the object's name: it is the only reliable link when that name has
+--     nothing in common with the objective.
 local function LearnFromTooltip()
 	if not (C_TooltipInfo and C_TooltipInfo.GetWorldCursor) then return false end
 	local data = SafeCall(C_TooltipInfo.GetWorldCursor)
@@ -544,8 +627,10 @@ local function LearnFromTooltip()
 end
 
 -- Le jeu lui-même rattache-t-il cet objet à une quête en cours ?
+-- EN: Does the game itself link this object to an active quest?
 local function IsQuestUnit(unit)
 	-- API ajoutées dans Forever ; absentes de Classic Era (restent alors le curseur et le nom)
+	-- EN: APIs added in Forever; absent from Classic Era (which leaves the cursor and the name)
 	if C_QuestLog and C_QuestLog.UnitIsRelatedToActiveQuest then
 		if SafeCall(C_QuestLog.UnitIsRelatedToActiveQuest, unit) == true then return true end
 	end
@@ -563,6 +648,8 @@ end
 -- Le joueur pêche-t-il ? La pêche est une canalisation, reconnue à l'icône de son sort, sinon à
 -- son nom, qui est celui du métier. Renvoie aussi le nom et l'icône de la canalisation en
 -- cours, pour le diagnostic.
+-- EN: Is the player fishing? Fishing is a channel, recognized by its spell icon, otherwise by its name, which is the
+--     profession's. Also returns the name and icon of the current channel, for diagnostics.
 local function ReadLine()
 	if not UnitChannelInfo then return false end
 	local ok, name, _, icon = pcall(UnitChannelInfo, "player")
@@ -579,12 +666,15 @@ end
 -- Le client renvoie selon les cas un fileID, un chemin (Interface\Cursor\Mine) ou un nom
 -- d'atlas (Cursor_Crosshair_UnableMine_64) : on cherche donc des mots-clés dans la chaîne.
 -- Le premier qui s'y trouve l'emporte : « questinteract » est une quête avant d'être une interaction.
+-- EN: Depending on the case, the client returns a fileID, a path (Interface\Cursor\Mine) or an atlas name
+--     (Cursor_Crosshair_UnableMine_64): so we look for keywords in the string. The first one found wins: «
+--     questinteract » is a quest before it is an interaction.
 local CURSOR_KEYWORDS = {
 	{ "gather",    "herb" },
 	{ "mine",      "ore" },
-	{ "axe",       "lumber" }, -- (port retail) crosshair_axe_64 : un arbre à abattre pour le bois
+	{ "axe",       "lumber" }, -- (port retail) crosshair_axe_64 : un arbre à abattre pour le bois | EN: (retail port) crosshair_axe_64: a tree to chop for lumber
 	{ "quest",     "quest" },
-	{ "important", "quest" },  -- les quêtes que le jeu distingue ont leur curseur, sans le mot « quest »
+	{ "important", "quest" },  -- les quêtes que le jeu distingue ont leur curseur, sans le mot « quest » | EN: quests the game distinguishes have their own cursor, without the word « quest »
 	{ "recurring", "quest" },
 	{ "wrapper",   "quest" },
 	{ "lootall",   "chest" },
@@ -600,11 +690,13 @@ local CURSOR_KEYWORDS = {
 	{ "repair",    "service" },
 	{ "stable",    "service" },
 	{ "interact",  "other" },
-	{ "inspect",   "other" },  -- la loupe : un écriteau, un livre
+	{ "inspect",   "other" },  -- la loupe : un écriteau, un livre | EN: the magnifying glass: a sign, a book
 }
 
 -- Renvoie la catégorie et l'indicateur "grisé" (variante Unable : interaction impossible
 -- pour l'instant) lus dans un nom de curseur
+-- EN: Returns the category and the "grayed" flag (Unable variant: interaction currently impossible) read from a
+--     cursor name
 local function ReadCursorName(name)
 	if type(name) ~= "string" then return nil end
 	name = name:lower()
@@ -617,6 +709,8 @@ end
 
 -- Renvoie : l'objet a-t-il une icône de curseur, sa catégorie, grisée ou non, et le nom
 -- brut du curseur (pour le debug)
+-- EN: Returns: whether the object has a cursor icon, its category, grayed or not, and the raw cursor name (for
+--     debug)
 local function ReadCursor(unit)
 	if not SafeCall(SetUnitCursorTexture, probe, unit, nil, true) then return false end
 	local texture = probe:GetTexture()
@@ -640,6 +734,8 @@ end
 
 -- Numéro de l'objet dans les données du jeu, le même pour tous les objets d'une sorte. Il se lit
 -- dans son GUID (GameObject-0-serveur-instance-zone-numéro-exemplaire) ; nil si le jeu ne le donne pas.
+-- EN: ID of the object in the game data, the same for all objects of one kind. It is read from its GUID
+--     (GameObject-0-server-instance-zone-ID-spawn); nil if the game does not provide it.
 local function GUIDObject(guid)
 	return type(guid) == "string" and tonumber(guid:match("^GameObject%-%d+%-%d+%-%d+%-%d+%-(%d+)")) or nil
 end
@@ -653,6 +749,10 @@ end
 -- joueur a déjà fouillé un objet de ce numéro (LearnContainers), ou un mot de son nom commence ou
 -- finit comme un nom de coffre dans la langue du client. Renvoie ce qui l'y range (affiché par le
 -- debug), ou nil.
+-- EN: A chest has no cursor of its own: the game gives it a lever's (seen in game on 2026-10-13: « Coffre endommagé
+--     → autre » (Damaged Chest → other)). Two things file it among containers: the player has already looted an
+--     object with this ID (LearnContainers), or a word of its name begins or ends like a chest name in the client
+--     language. Returns what files it there (shown by debug), or nil.
 local CHEST_WORDS = {}
 for word in ns.ChestWords():gmatch("%S+") do CHEST_WORDS[#CHEST_WORDS + 1] = Fold(word) end
 
@@ -670,7 +770,11 @@ end
 -- du décor que le joueur fouille est retenu : c'est ce qui range parmi les coffres une caisse ou
 -- un tonneau, dont le nom ne dit rien, et tout coffre dans une langue que CHEST_WORDS n'a pas.
 -- Ni le flotteur, ni les filons et les plantes, que leur curseur désigne.
-local gathered = {}  -- numéro des filons et des plantes que le jeu a désignés depuis le chargement
+-- EN: Loot opens: the game says which object each share comes from (its GUID). The ID of a world object the player
+--     loots is remembered: that is what files among chests a crate or barrel, whose name says nothing, and any chest
+--     in a language CHEST_WORDS lacks. Not the fishing bobber, nor ore veins and herbs, which their cursor
+--     identifies.
+local gathered = {}  -- numéro des filons et des plantes que le jeu a désignés depuis le chargement | EN: IDs of the ore veins and herbs the game has targeted since loading
 
 local function LearnContainers()
 	if not (GetNumLootItems and GetLootSourceInfo) then return end
@@ -682,15 +786,22 @@ end
 
 -- Renvoie la catégorie de l'objet, l'indicateur "grisé", le nom de curseur brut et le numéro de
 -- l'objet, si le jeu le donne
+-- EN: Returns the object's category, the "grayed" flag, the raw cursor name and the object ID, if the game provides
+--     it
 local function Classify(unit, name)
 	local hasCursor, category, blocked, cursor = ReadCursor(unit)
 	-- Un curseur de service dit ce qu'est l'objet : ni son nom ni la pêche n'en font autre chose.
 	-- (Vu en jeu le 2026-10-13 : « Boîte aux lettres → quête », par le mot « boîte » d'un objectif.)
 	-- Seul le jeu peut encore le rattacher à une quête.
+	-- EN: A service cursor says what the object is: neither its name nor fishing make it anything else. (Seen in
+	--     game on 2026-10-13: « Boîte aux lettres → quête » (Mailbox → quest), via the word « boîte » (box) in an
+	--     objective.) Only the game can still tie it to a quest.
 	local service = category == "service"
 	if service then category = "other" end
 	-- le jeu n'a pas de curseur pour le flotteur, qui porte celui de n'importe quel objet : c'est
 	-- son numéro qui le désigne
+	-- EN: the game has no cursor for the fishing bobber, which carries that of any object: its ID is what identifies
+	--     it
 	local id = ObjectID(unit)
 	if id and BOBBER_IDS[id] then
 		category = "bobber"
@@ -699,9 +810,12 @@ local function Classify(unit, name)
 			category = "quest"
 		elseif service then
 			-- un autre objet, sans plus
+			-- EN: an "other" object, nothing more
 		elseif not id and (category == nil or category == "other") and ReadLine() then
 			-- faute de numéro lisible : un objet sans curseur à lui, désigné pendant que le
 			-- joueur pêche, est pris pour son flotteur
+			-- EN: for lack of a readable ID: an object without a cursor of its own, targeted while the player is
+			--     fishing, is taken to be their fishing bobber
 			category = "bobber"
 		elseif MatchQuestObjective(name) ~= nil then
 			category = "quest"
@@ -718,10 +832,16 @@ end
 -- Le personnage a-t-il le métier qui récolte cette catégorie ? true, false, ou nil quand le jeu ne le
 -- dit pas (client sans ces API, compétences pas encore chargées). Le sort de pistage connu ou la
 -- compétence lue suffisent l'un comme l'autre ; il faut que tout ce qui sait répondre dise non.
+-- EN: Does the character have the profession that gathers this category? true, false, or nil when the game does not
+--     say (client without these APIs, skills not yet loaded). A known tracking spell or a read skill is each enough
+--     on its own; everything that can answer must say no.
 local Trained
 do
 	-- pour chaque catégorie, la ligne de compétence du métier dans les données du jeu, et les sorts de
 	-- pistage qu'il apprend (Découverte d'herbes, Découverte de gisements), ceux que NodeScan.lua reconnaît
+	-- EN: for each category, the profession's skill line in the game data, and the tracking spells it teaches
+	--     (Découverte d'herbes (Find Herbs), Découverte de gisements (Find Minerals)), the ones NodeScan.lua
+	--     recognizes
 	local PROFESSIONS = { herb = { line = 182, finders = { 2383, 8387 } }, ore = { line = 186, finders = { 2580, 8388 } } }
 
 	function Trained(category)
@@ -738,6 +858,8 @@ do
 		end
 		-- Retail : les métiers se lisent par GetProfessions ; leur ligne de compétence parente est la
 		-- même (182, 186). Ne sert qu'à dire oui : juste après la connexion la liste peut être vide.
+		-- EN: Retail: professions are read via GetProfessions; their parent skill line is the same (182, 186). Only
+		--     used to say yes: right after login the list may be empty.
 		if GetProfessions and GetProfessionInfo then
 			local ok, first, second = pcall(GetProfessions)
 			if ok then
@@ -751,6 +873,7 @@ do
 		end
 		if C_SkillInfo and C_SkillInfo.GetSkillLineInfoByID then
 			-- aucune ligne : le jeu ne les a pas encore données (juste après la connexion)
+			-- EN: no lines: the game has not provided them yet (right after login)
 			if (SafeCall(C_SkillInfo.GetNumSkillLines) or 0) == 0 then return nil end
 			local ok, info = pcall(C_SkillInfo.GetSkillLineInfoByID, profession.line)
 			if not ok or IsSecret(info) then return nil end
@@ -768,6 +891,8 @@ end
 -- "ready" : on peut interagir ; "far" : trop loin ; "locked" : à portée mais le jeu refuse
 -- (compétence insuffisante, objet verrouillé…). Sans l'API de portée (Classic Era), un
 -- curseur grisé est simplement considéré comme trop loin.
+-- EN: "ready": interaction possible; "far": too far; "locked": in range but the game refuses (insufficient skill,
+--     locked object…). Without the range API (Classic Era), a grayed cursor is simply treated as too far.
 local function ReadState(unit, blocked)
 	local inRange
 	if UnitIsInInteractRange then inRange = SafeCall(UnitIsInInteractRange, unit) end
@@ -779,6 +904,7 @@ end
 ---------------------------------------------------------------------------
 -- Cible
 ---------------------------------------------------------------------------
+-- EN: Target
 
 local function GetNamePlate(unit)
 	return C_NamePlate and SafeCall(C_NamePlate.GetNamePlateForUnit, unit)
@@ -786,6 +912,8 @@ end
 
 -- Y a-t-il une cible d'interaction ? true, false, ou nil si le client ne le dit pas
 -- (valeurs secrètes). Un objet du décor n'"existe" pas au sens de UnitExists.
+-- EN: Is there an interaction target? true, false, or nil if the client does not say (secret values). A world object
+--     does not "exist" in the UnitExists sense.
 local function SoftTargetExists()
 	local isUnit, isObject = SafeCall(UnitExists, SOFT), SafeCall(UnitIsGameObject, SOFT)
 	if isUnit == true or isObject == true then return true end
@@ -798,6 +926,10 @@ end
 -- tant qu'il n'a jamais donné la nameplate d'un objet du décor sur ce client, on la cherche
 -- aussi en balayant les nameplates visibles. Sans cible lisible, la quatrième valeur dit si
 -- c'est faute de le savoir.
+-- EN: Returns the unit token to query, its nameplate (nil if the game does not show it, or not yet) and the path
+--     taken (for debug). The "softinteract" token is usually enough; as long as it has never yielded a world
+--     object's nameplate on this client, we also look for it by scanning the visible nameplates. Without a readable
+--     target, the fourth value says whether that is for lack of knowing.
 local function ResolveTarget()
 	local exists = SoftTargetExists()
 	if exists == false then return nil end
@@ -824,6 +956,7 @@ end
 
 -- Donne à une couche une image de l'addon ; à défaut, une texture du jeu. Renvoie false si
 -- l'image manque.
+-- EN: Gives a layer an image from the addon; failing that, a game texture. Returns false if the image is missing.
 local function LoadImage(texture, file)
 	if texture:SetTexture(MEDIA .. file .. ".tga") == false then
 		texture:SetTexture(FALLBACK_TEXTURE)
@@ -833,6 +966,7 @@ local function LoadImage(texture, file)
 end
 
 -- Renvoie la couche, et si son image a été trouvée
+-- EN: Returns the layer, and whether its image was found
 local function NewLayer(parent, file, drawLayer, subLevel, blendMode)
 	local texture = parent:CreateTexture(nil, drawLayer, nil, subLevel)
 	local found = LoadImage(texture, file)
@@ -840,14 +974,16 @@ local function NewLayer(parent, file, drawLayer, subLevel, blendMode)
 	texture:SetPoint("CENTER")
 	texture:SetVertexColor(1, 1, 1, 0)
 	-- positions et tailles animées au sous-pixel : pas d'accrochage à la grille
+	-- EN: positions and sizes animated at sub-pixel precision: no snapping to the pixel grid
 	if texture.SetSnapToPixelGrid then texture:SetSnapToPixelGrid(false) end
 	if texture.SetTexelSnappingBias then texture:SetTexelSnappingBias(0) end
 	return texture, found
 end
 
-local silhouette = {}     -- owner, mask, outline, applied, show, failed (nom du texte qui dit pourquoi elle est indisponible)
+local silhouette = {}     -- owner, mask, outline, applied, show, failed (nom du texte qui dit pourquoi elle est indisponible) | EN: owner, mask, outline, applied, show, failed (name of the text that says why it is unavailable)
 
 -- Crée les couches d'un effet, et celles de ses ondes
+-- EN: Creates an effect's layers, and those of its waves
 local function BuildEffect(effect)
 	local fx = { waves = {} }
 	effect.fx, effect.layers = fx, {}
@@ -868,6 +1004,8 @@ end
 -- Renvoie l'effet à dessiner : celui de la catégorie de l'objet, construit à son premier usage,
 -- ou l'effet de secours si ses images manquent. Quand il change, ses couches remplacent celles
 -- du précédent.
+-- EN: Returns the effect to draw: that of the object's category, built on first use, or the fallback effect if its
+--     images are missing. When it changes, its layers replace those of the previous one.
 local function UseEffect()
 	local effect = EFFECTS[Look(glow.category, "effect")]
 	if not effect.fx then BuildEffect(effect) end
@@ -890,6 +1028,7 @@ local function UseEffect()
 end
 
 -- Lance une onde : un anneau qui s'élargit en s'éteignant, ou qui se resserre sur la lueur
+-- EN: Launches a wave: a ring that widens as it fades, or that tightens onto the glow
 local function StartWave(from, to, duration, peak, inward)
 	local chosen
 	for _, wave in ipairs(glow.effect.fx.waves) do
@@ -905,6 +1044,7 @@ local function SetState(state)
 	if state == glow.state then return end
 	if state == "ready" then
 		-- verrouillage : un anneau se resserre sur la lueur, qui s'illumine un instant
+		-- EN: lock-on: a ring tightens onto the glow, which lights up for a moment
 		glow.flash = 1
 		StartWave(1.50, 1.00, 0.35, 0.9, true)
 	end
@@ -913,6 +1053,8 @@ end
 
 -- Mémorise la position de la lueur à l'écran, pour pouvoir la dissiper sur place quand sa
 -- nameplate disparaît. Certaines mesures sont interdites ou secrètes selon le contexte.
+-- EN: Records the glow's on-screen position, so it can be dissipated in place when its nameplate disappears. Some
+--     measurements are forbidden or secret depending on the context.
 local function CachePosition(frame)
 	glow.gx = nil
 	if glow.measureFailed then return end
@@ -921,16 +1063,17 @@ local function CachePosition(frame)
 	if not ok or not okScale then glow.measureFailed = true return end
 	local uiScale = UIParent:GetEffectiveScale()
 	-- une valeur secrète ne se teste même pas : on l'écarte avant tout autre examen
+	-- EN: a secret value cannot even be tested: it is discarded before any other check
 	if IsSecret(x) or IsSecret(y) or IsSecret(scale) or IsSecret(uiScale) then return end
 	if not x or not y or not scale or uiScale == 0 then return end
 	local ratio = scale / uiScale
 	glow.gx, glow.gy, glow.gscale = x * ratio, y * ratio, ratio
 end
 
-local context = {}  -- ce que l'effet reçoit à chaque image, réutilisé de l'une à l'autre
+local context = {}  -- ce que l'effet reçoit à chaque image, réutilisé de l'une à l'autre | EN: what the effect receives each frame, reused from one frame to the next
 
 local function Animate(self, elapsed)
-	if elapsed > 0.1 then elapsed = 0.1 end -- pas de saut après un gel d'image
+	if elapsed > 0.1 then elapsed = 0.1 end -- pas de saut après un gel d'image | EN: no jump after a frame freeze
 	local effect = UseEffect()
 	local fx, c = effect.fx, context
 
@@ -945,12 +1088,14 @@ local function Animate(self, elapsed)
 
 	local ready, locked = glow.ready, glow.locked
 	-- respiration et mouvement, plus vifs à portée, ralentis sur un objet indisponible
+	-- EN: breathing and motion, livelier in range, slowed down on an unavailable object
 	glow.phase = glow.phase + elapsed * TWO_PI / Lerp(3.4, 1.7, ready)
 	glow.spin = glow.spin - elapsed * Lerp(0.55, 1.6, ready) * (1 - 0.7 * locked)
 
 	c.frame, c.elapsed, c.size = self, elapsed, Look(glow.category, "size")
-	c.arrive = 1 - (1 - glow.appear) ^ 3            -- 0 -> 1 en décélérant
+	c.arrive = 1 - (1 - glow.appear) ^ 3            -- 0 -> 1 en décélérant | EN: 0 -> 1 with deceleration
 	-- sur un objet indisponible la lueur faiblit de moitié, ou s'éteint si le joueur l'a demandé
+	-- EN: on an unavailable object the glow dims by half, or goes out if the player asked for it
 	local dim = db.hideLocked and 1 or 0.5
 	c.alpha = c.arrive * Look(glow.category, "intensity") / 100 * (1 - dim * locked)
 	c.ready, c.locked, c.flash, c.phase, c.spin = ready, locked, glow.flash, glow.phase, glow.spin
@@ -958,6 +1103,8 @@ local function Animate(self, elapsed)
 	c.twinkle = 0.5 + 0.5 * sin(glow.phase * 2.3 + 1.3)
 	-- couleur : éteinte vers le gris sur un objet indisponible, tirée vers le blanc pour les
 	-- traits fins (h) et plus encore pour le cœur des éclats (w)
+	-- EN: color: dulled toward gray on an unavailable object, pulled toward white for thin strokes (h) and even more
+	--     for the core of sparks (w)
 	local r = Lerp(glow.r, 0.62, 0.75 * locked)
 	local g = Lerp(glow.g, 0.62, 0.75 * locked)
 	local b = Lerp(glow.b, 0.62, 0.75 * locked)
@@ -968,6 +1115,7 @@ local function Animate(self, elapsed)
 	effect.Update(fx, c)
 
 	-- ondes : un "ping" régulier vers l'extérieur, qui se tait sur un objet indisponible
+	-- EN: waves: a regular outward "ping", which falls silent on an unavailable object
 	glow.nextPing = glow.nextPing - elapsed
 	if glow.nextPing <= 0 then
 		glow.nextPing = Lerp(2.4, 3.8, ready)
@@ -999,6 +1147,7 @@ local function Animate(self, elapsed)
 
 	if label and label:IsShown() then
 		-- le nom reste lisible quelle que soit l'intensité : il ne suit que l'arrivée et l'état
+		-- EN: the name stays readable whatever the intensity: it only follows the arrival and the state
 		label:SetAlpha(c.arrive * (1 - (db.hideLocked and 1 or 0.4) * locked))
 		label.name:SetTextColor(c.hr, c.hg, c.hb)
 	end
@@ -1018,10 +1167,14 @@ end
 ---------------------------------------------------------------------------
 -- Nom et icône de l'objet
 ---------------------------------------------------------------------------
+-- EN: Object name and icon
 
 -- Le jeu écrit le nom de sa cible d'interaction sur sa nameplate, sous une icône. Sur la
 -- nameplate qui porte la lueur, Lueur les masque et dessine les siens à la même place : ils
 -- se règlent, prennent la couleur de la catégorie, et l'aperçu les montre tels quels.
+-- EN: The game writes its interaction target's name on its nameplate, under an icon. On the nameplate that carries
+--     the glow, Lueur hides them and draws its own in the same place: they are configurable, take the category's
+--     color, and the preview shows them as they are.
 local function CreateLabel()
 	label = CreateFrame("Frame", nil, glow.frame)
 	label:SetSize(1, 1)
@@ -1030,6 +1183,7 @@ local function CreateLabel()
 	label.name = label:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	label.name:SetPoint("CENTER", label, "CENTER", 0, 0)
 	-- la police du jeu : la taille du texte se règle à partir de la sienne
+	-- EN: the game font: the text size is set relative to its size
 	label.font, label.height, label.flags = label.name:GetFont()
 	return label
 end
@@ -1037,6 +1191,9 @@ end
 -- Montre le nom et l'icône de l'objet à l'endroit de sa nameplate, ou les retire selon les
 -- réglages. L'icône est celle que le jeu donne à l'unité ; sans unité (aperçu), celle de la
 -- catégorie. Elle se pose sur le nom, ou à sa place quand il n'est pas écrit.
+-- EN: Shows the object's name and icon at its nameplate's position, or removes them depending on the settings. The
+--     icon is the one the game gives the unit; without a unit (preview), the category's. It sits on top of the name,
+--     or in its place when the name is not written.
 local function ShowLabel(unit, name, category)
 	local showName, showIcon = Look(category, "showName"), Look(category, "showIcon")
 	if not glow.anchor or not (showName or showIcon) then
@@ -1059,6 +1216,7 @@ local function ShowLabel(unit, name, category)
 		if frame.font then
 			height = height * Look(category, "textSize") / 100
 			-- une police que le client refuserait laisse place à celle du jeu
+			-- EN: a font the client would reject gives way to the game's
 			local file, ok, done = ns.FontFile(Look(category, "textFont"))
 			if file then ok, done = pcall(frame.name.SetFont, frame.name, file, height, frame.flags) end
 			if not (ok and done ~= false) then frame.name:SetFont(frame.font, height, frame.flags) end
@@ -1076,6 +1234,7 @@ local function ShowLabel(unit, name, category)
 end
 
 -- Rend au jeu l'affichage de la nameplate que la lueur vient de quitter
+-- EN: Gives the game back the display of the nameplate the glow just left
 local function RestoreNative()
 	if glow.native then
 		pcall(glow.native.SetAlpha, glow.native, 1)
@@ -1085,6 +1244,8 @@ end
 
 -- Masque ce que le jeu dessine sur la nameplate qui porte la lueur. Le cadre masqué est gardé :
 -- le jeu le recycle pour d'autres unités, et c'est lui qu'il faudra rétablir.
+-- EN: Hides what the game draws on the nameplate that carries the glow. The hidden frame is kept: the game recycles
+--     it for other units, and it is the one that will need restoring.
 local function HideNative(plate)
 	local ok, unitFrame = pcall(function() return plate.UnitFrame end)
 	if not ok or type(unitFrame) ~= "table" then unitFrame = nil end
@@ -1098,11 +1259,18 @@ end
 -- Lueur n'éclaire pas est donc masquée de la même façon, le temps qu'elle est la cible (`muted`).
 -- (Signalé le 2026-10-13 : « certains nameplates de pnj apparaissent en combat avec l'addon, des
 -- barres de vies notamment, cela ne devrait pas ».)
+-- EN: In combat the game no longer allows touching CVars, and the native display was opened just before so the glow
+--     still appears there (PLAYER_REGEN_DISABLED): the game then gives a nameplate to every interaction target, NPCs
+--     and corpses included, with their health bar. So the nameplate of a target Lueur does not light up is hidden
+--     the same way, for as long as it is the target (`muted`). (Reported on 2026-10-13: « certains nameplates de pnj
+--     apparaissent en combat avec l'addon, des barres de vies notamment, cela ne devrait pas » (some NPC nameplates
+--     appear in combat with the addon, health bars in particular, that shouldn't happen).)
 local muted
 
 local function Unmute()
 	if not muted then return end
 	-- (le même cadre porte la lueur désormais : c'est HideNative qui le tient masqué)
+	-- EN: (the same frame now carries the glow: HideNative keeps it hidden)
 	if muted ~= glow.native then pcall(muted.SetAlpha, muted, 1) end
 	muted = nil
 end
@@ -1117,6 +1285,9 @@ end
 -- Les réglages du joueur montreraient-ils la nameplate de cette unité sans qu'elle soit la cible
 -- d'interaction ? Celle d'un objet du décor ou d'un mort, jamais. Pour les autres, c'est la CVar de
 -- leur camp qui le dit ; faute de pouvoir la lire, ou de savoir le camp, la nameplate est laissée.
+-- EN: Would the player's settings show this unit's nameplate without it being the interaction target? Never for a
+--     world object or a dead unit. For the others, the CVar for their side decides; if it cannot be read, or the
+--     side is unknown, the nameplate is left alone.
 local PLATE_CVARS = {
 	enemy = { "nameplateShowEnemies" },
 	player = { "nameplateShowFriendlyPlayers", "nameplateShowFriends" },
@@ -1141,6 +1312,8 @@ end
 -- La cible n'est pas mise en lumière : l'affichage natif se referme. S'il ne le peut pas (en
 -- combat), renvoie la nameplate à masquer, sauf en mode non exclusif ou si le joueur la montre de
 -- toute façon.
+-- EN: The target is not highlighted: the native display closes. If it cannot (in combat), returns the nameplate to
+--     hide, except in non-exclusive mode or if the player shows it anyway.
 local function Shut(unit, plate)
 	SetGate(false)
 	if plate and db.exclusive and gateOpen ~= false and not PlateOwed(unit) then return plate end
@@ -1169,9 +1342,12 @@ end
 
 -- Dissipation sur place : la lueur s'élargit et s'éteint là où elle se trouvait, sous les
 -- traits de son effet (sa lueur, l'anneau de ses ondes)
+-- EN: In-place dissipation: the glow widens and fades where it was, in the form of its effect (its glow, the ring of
+--     its waves)
 local function PlayGhost()
 	local effect = glow.effect
 	-- pas dans l'aperçu : la dissipation se joue sur l'écran, sous la fenêtre qui le montre
+	-- EN: not in the preview: the dissipation plays on the screen, beneath the window that shows it
 	if not glow.gx or glow.preview or effect == EFFECTS.fallback or glow.appear < 0.3 then return end
 	local frame = ghost or CreateGhost()
 	if frame.effect ~= effect then
@@ -1180,7 +1356,7 @@ local function PlayGhost()
 		LoadImage(frame.ring, effect.wave or "ring")
 	end
 	local fx = effect.fx
-	frame.spread = effect.band and 1 or 1.5  -- une simple lueur n'occupe que le centre de son image
+	frame.spread = effect.band and 1 or 1.5  -- une simple lueur n'occupe que le centre de son image | EN: a plain glow only occupies the center of its image
 	frame.flat, frame.ringed = effect.flat or 1, effect.wave ~= nil
 	frame.ring:SetRotation(fx.waveAngle or 0)
 	frame:ClearAllPoints()
@@ -1200,7 +1376,11 @@ end
 -- derrière un modèle 3D. On triche pour le personnage du joueur, seul modèle dont la place
 -- à l'écran se déduit sans mesure : la caméra vise sa tête, et sa taille ne dépend que du
 -- zoom. Un masque en ellipse y découpe la lueur, qui semble alors passer derrière lui.
-local BODY_HEIGHT = 1.9   -- hauteur du personnage en hauteurs d'écran, caméra à 1 m, champ de vision par défaut
+-- EN: The UI is always drawn over the world: an addon cannot put anything behind a 3D model. We cheat for the
+--     player's character, the only model whose on-screen position can be deduced without measuring: the camera aims
+--     at its head, and its size depends only on zoom. An elliptical mask cuts the glow there, which then seems to
+--     pass behind it.
+local BODY_HEIGHT = 1.9   -- hauteur du personnage en hauteurs d'écran, caméra à 1 m, champ de vision par défaut | EN: character height in screen heights, camera at 1 m, default field of view
 
 local function Smoothstep(low, high, value)
 	local t = Clamp((value - low) / (high - low), 0, 1)
@@ -1209,6 +1389,8 @@ end
 
 -- Renvoie la largeur et la hauteur du personnage à l'écran, et la position de ses pieds par
 -- rapport au centre de l'écran (unités de l'interface) ; nil en vue subjective
+-- EN: Returns the character's on-screen width and height, and the position of its feet relative to the screen center
+--     (UI units); nil in first-person view
 local function MeasureBody()
 	local zoom = GetCameraZoom and SafeCall(GetCameraZoom)
 	if not zoom or zoom < 2 then return nil end
@@ -1220,6 +1402,7 @@ local function MeasureBody()
 		width = height * 0.8
 	end
 	-- vu d'en haut, le corps paraît raccourci et tient presque entier sous le centre de l'écran
+	-- EN: seen from above, the body looks foreshortened and fits almost entirely below the screen center
 	height = height * 0.9
 	return width, height, (cdb.bodyShift / 100 - 0.92) * height
 end
@@ -1234,9 +1417,11 @@ local function UpdateSilhouette()
 	end
 	-- la découpe ne vaut que si l'objet est plus loin que le personnage, donc plus haut à
 	-- l'écran que ses pieds ; plus près de la caméra, c'est à la lueur de le recouvrir
+	-- EN: the cutout only applies if the object is farther away than the character, hence higher on screen than its
+	--     feet; closer to the camera, it is the glow that should cover the character
 	local strength = 1
 	if glow.preview then
-		strength = 0 -- l'aperçu se joue dans sa fenêtre, où le personnage n'est pas
+		strength = 0 -- l'aperçu se joue dans sa fenêtre, où le personnage n'est pas | EN: the preview plays in its own window, where the character is not
 	elseif glow.anchor and glow.gx then
 		strength = Smoothstep(feet - 0.10 * height, feet + 0.20 * height, glow.gy - UIParent:GetHeight() / 2)
 	end
@@ -1247,6 +1432,8 @@ local function UpdateSilhouette()
 	if silhouette.show then
 		-- contour de la zone entièrement masquée : le cœur du masque en occupe 55 %, et
 		-- l'anneau qui le dessine est à 74 % de sa texture
+		-- EN: outline of the fully masked area: the mask's core occupies 55 % of it, and the ring that draws it is
+		--     at 74 % of its texture
 		outline:SetSize(maskWidth * 0.55 / 0.74, maskHeight * 0.55 / 0.74)
 		outline:SetPoint("CENTER", silhouette.owner, "CENTER", 0, centerY)
 		outline:Show()
@@ -1266,6 +1453,7 @@ local function CreateSilhouette()
 		return
 	end
 	-- hors du masque, "blanc" : la lueur n'est entamée que dans l'ellipse
+	-- EN: outside the mask, "white": the glow is only cut within the ellipse
 	local set, loaded = pcall(mask.SetTexture, mask, MEDIA .. "hole.tga", "CLAMPTOWHITE", "CLAMPTOWHITE")
 	if not set or loaded == false then
 		silhouette.failed = "FAIL_MASK_TEXTURE"
@@ -1282,8 +1470,10 @@ local function CreateSilhouette()
 end
 
 -- Pose ou retire la découpe sur les couches de la lueur, selon le réglage et son état
+-- EN: Applies or removes the cutout on the glow's layers, depending on the setting and its state
 local function ApplySilhouette()
 	-- la découpe se règle par catégorie : c'est celle de l'objet que porte la lueur qui compte
+	-- EN: the cutout is set per category: what counts is the category of the object the glow is on
 	local wanted = Look(glow.anchor and glow.category, "silhouette") and not silhouette.failed
 	if not (wanted or silhouette.show or silhouette.applied) then return end
 	if not silhouette.owner and not silhouette.failed then CreateSilhouette() end
@@ -1327,10 +1517,13 @@ end
 
 -- Accroche la lueur à un cadre (la nameplate de la cible, ou celle que simule l'aperçu), au
 -- décalage réglé, et relance son animation d'arrivée
+-- EN: Attaches the glow to a frame (the target's nameplate, or the one the preview simulates), at the configured
+--     offset, and restarts its arrival animation
 local function Attach(anchor, category, state)
 	local frame = glow.frame or CreateGlow()
 	frame:SetParent(anchor)
 	-- sous le contenu de la nameplate, pour ne pas laver son texte
+	-- EN: beneath the nameplate's content, so as not to wash out its text
 	local ok, level = pcall(anchor.GetFrameLevel, anchor)
 	if ok and not IsSecret(level) and level then frame:SetFrameLevel(max(level - 1, 0)) end
 	frame:ClearAllPoints()
@@ -1355,6 +1548,7 @@ local function Attach(anchor, category, state)
 end
 
 -- Un nouvel état n'est affiché qu'une fois stable, pour ne pas scintiller à la limite de portée
+-- EN: A new state is only shown once stable, so as not to flicker at the edge of range
 local function ProposeState(state)
 	if state == glow.state then glow.pending = nil return end
 	local now = GetTime()
@@ -1369,6 +1563,8 @@ end
 local function Present(plate, unit, name, category, state)
 	-- une nameplate qui change de catégorie se traite comme une autre cible : effet, taille,
 	-- décalage et couleur peuvent tous changer avec elle
+	-- EN: a nameplate that changes category is treated as a different target: effect, size, offset and color may all
+	--     change with it
 	if glow.anchor ~= plate or glow.retarget or glow.category ~= category then
 		Release()
 		Attach(plate, category, state)
@@ -1383,6 +1579,7 @@ end
 ---------------------------------------------------------------------------
 -- Évaluation
 ---------------------------------------------------------------------------
+-- EN: Evaluation
 
 local function Flag(value)
 	if value == nil then return "?" end
@@ -1404,6 +1601,7 @@ local function DescribeTarget(unit, name, via, cursor, inRange)
 		parts[#parts + 1] = L.DEBUG_QUEST:format(Flag(SafeCall(C_QuestLog.UnitIsRelatedToActiveQuest, unit)))
 	end
 	-- (un curseur de service : le nom de l'objet n'est pas regardé, et le détail le dit)
+	-- EN: (a service cursor: the object's name is not looked at, and the detail says so)
 	local _, kind = ReadCursor(unit)
 	local service = kind == "service" and L.MATCH_CURSOR
 	parts[#parts + 1] = L.DEBUG_MATCH:format(service or MatchQuestObjective(name) or L.MATCH_NONE, #questTexts)
@@ -1418,6 +1616,7 @@ local function DescribeTarget(unit, name, via, cursor, inRange)
 end
 
 -- La lueur est-elle suspendue par le contexte : en combat, ou en instance, si le joueur l'a demandé
+-- EN: Is the glow suspended by the context: in combat, or in an instance, if the player asked for it
 local function Paused()
 	if db.hideInCombat and (inCombat or InCombatLockdown()) then return true end
 	return db.hideInInstance and IsInInstance ~= nil and SafeCall(IsInInstance) == true
@@ -1427,6 +1626,9 @@ end
 -- du jeu (ouvert seulement si elle mérite d'être mise en lumière) et la lueur elle-même.
 -- Renvoie la nameplate d'une cible sans lueur que le jeu montre quand même, faute de pouvoir
 -- refermer son affichage : Evaluate la masque.
+-- EN: Determines the current interaction target, then brings the game's native display (opened only if the target
+--     deserves to be highlighted) and the glow itself in line with it. Returns the nameplate of a glowless target
+--     that the game shows anyway, since its display cannot be closed: Evaluate hides it.
 local function Decide()
 	if glow.preview or leaving then return end
 	if not db.enabled then Release() return end
@@ -1443,19 +1645,21 @@ local function Decide()
 	if plate or not unit then glow.plateMissingSince = nil end
 	if not unit then
 		if lastReport then Report(L.DEBUG_NO_TARGET) end
-		SetGate(unknown == true) -- faute de savoir, on laisse le jeu montrer sa cible
+		SetGate(unknown == true) -- faute de savoir, on laisse le jeu montrer sa cible | EN: when unsure, we let the game show its target
 		Release()
 		return
 	end
 	local name = SafeCall(UnitName, unit)
 	local label = name or "?"
 	-- seuls les objets du décor sont mis en lumière : ni PNJ, ni cadavres
+	-- EN: only world objects are highlighted: no NPCs, no corpses
 	if SafeCall(UnitIsGameObject, unit) ~= true then
 		Report(L.DEBUG_IGNORED:format(label))
 		Release()
 		return Shut(unit, plate)
 	end
 	-- ni les objets que le joueur a écartés par leur nom
+	-- EN: nor objects the player has excluded by name
 	if name and db.ignored[NameKey(name)] then
 		Report(L.DEBUG_SKIPPED:format(label))
 		Release()
@@ -1464,6 +1668,7 @@ local function Decide()
 
 	local category, blocked, cursor, id = Classify(unit, name)
 	-- un filon ou une plante que le jeu désigne : Nodes.lua en retient le nom, pour le reconnaître sur la minimap
+	-- EN: an ore vein or herb the game targets: Nodes.lua remembers its name, to recognize it on the minimap
 	if name and ns.LearnNode and (category == "ore" or category == "herb") then ns.LearnNode(name, id, category) end
 	if id and (category == "ore" or category == "herb") then gathered[id] = true end
 	local state, inRange = ReadState(unit, blocked)
@@ -1475,6 +1680,7 @@ local function Decide()
 		return Shut(unit, plate)
 	end
 	-- ni une plante ou un filon que ce personnage ne sait pas récolter (demandé par des joueurs le 2026-10-14)
+	-- EN: nor an herb or ore vein this character cannot gather (requested by players on 2026-10-14)
 	if db.hideUntrained and Trained(category) == false then
 		Report(L.DEBUG_UNTRAINED:format(label, CategoryName(category)),
 			function() return DescribeTarget(unit, name, via, cursor, inRange) end)
@@ -1485,6 +1691,8 @@ local function Decide()
 	if not plate then
 		-- la nameplate vient d'être demandée au jeu : la lueur s'y posera à son arrivée.
 		-- Si elle tarde, c'est que le jeu connaît la cible sans vouloir l'afficher.
+		-- EN: the nameplate has just been requested from the game: the glow will settle on it when it arrives. If it
+		--     is slow to come, the game knows the target but won't display it.
 		Release()
 		local now = GetTime()
 		glow.plateMissingSince = glow.plateMissingSince or now
@@ -1506,6 +1714,7 @@ function Evaluate()
 end
 
 -- Tant que la ligne de pêche est à l'eau, le jeu cherche le flotteur plus loin que la portée du réglage
+-- EN: While the fishing line is in the water, the game searches for the fishing bobber beyond the configured range
 local function WatchLine()
 	local out = db.enabled and cdb.categories.bobber and ReadLine() or false
 	if out == lineOut then return end
@@ -1518,17 +1727,22 @@ end
 ---------------------------------------------------------------------------
 -- Aperçu
 ---------------------------------------------------------------------------
+-- EN: Preview
 
 -- Déroulé de l'aperçu : chaque état, en boucle
+-- EN: Preview sequence: each state, in a loop
 local PREVIEW_STAGES = { { "far", 3.0 }, { "ready", 4.5 }, { "locked", 2.5 } }
 
 -- Nom d'objet que l'aperçu montre pour une catégorie
+-- EN: Object name the preview shows for a category
 local function SampleName(category)
 	return L["SAMPLE_" .. category:upper()]
 end
 
 -- Montre la lueur d'une catégorie sur `anchor`, le cadre que la fenêtre d'aperçu place là où le
 -- jeu mettrait la nameplate de l'objet, et enchaîne ses états en boucle jusqu'à StopPreview
+-- EN: Shows a category's glow on `anchor`, the frame the preview window places where the game would put the object's
+--     nameplate, and cycles through its states in a loop until StopPreview
 local function StartPreview(anchor, category)
 	Release()
 	Unmute()
@@ -1558,6 +1772,7 @@ end
 ---------------------------------------------------------------------------
 -- Événements
 ---------------------------------------------------------------------------
+-- EN: Events
 
 local events = CreateFrame("Frame")
 local sincePoll = 0
@@ -1585,11 +1800,12 @@ function handlers.ADDON_LOADED(name)
 	db = LueurDB
 	if db.schema ~= SCHEMA then
 		local from = db.schema or 1
-		if from < 2 then db.size = nil end -- le halo a changé de nature : l'ancienne taille n'a plus le même sens
+		if from < 2 then db.size = nil end -- le halo a changé de nature : l'ancienne taille n'a plus le même sens | EN: the halo has changed nature: the old size no longer means the same thing
 		if from < 3 then RepairSavedCVars() end
 		if from < 4 then
 			-- les styles du halo sont devenus des effets parmi d'autres ; cadavres à dépecer et
 			-- butin ne sont plus mis en lumière
+			-- EN: halo styles have become effects among others; skinnable corpses and loot are no longer highlighted
 			db.effect, db.style = db.effect or LEGACY_STYLES[db.style], nil
 			if type(db.categories) == "table" then db.categories.skin, db.categories.loot = nil, nil end
 		end
@@ -1597,6 +1813,8 @@ function handlers.ADDON_LOADED(name)
 			-- catégories et découpe deviennent propres à chaque personnage : celles du compte sont
 			-- mises de côté, et chaque personnage en hérite à sa première connexion. Les coffres,
 			-- jusque-là rangés parmi les autres objets, les suivent.
+			-- EN: categories and cutout become per-character: the account's are set aside, and each character
+			--     inherits them on first login. Chests, until then filed among the other objects, follow them.
 			if type(db.categories) == "table" then
 				db.inherited = { categories = db.categories, bodyScale = db.bodyScale, bodyShift = db.bodyShift }
 				db.inherited.categories.chest = db.showOther == true
@@ -1606,6 +1824,7 @@ function handlers.ADDON_LOADED(name)
 		end
 		if from < 6 and type(db.categoryEffects) == "table" then
 			-- l'effet propre à une catégorie n'est plus qu'un de ses réglages de personnalisation
+			-- EN: a category's own effect is now just one of its customization settings
 			db.categorySettings = type(db.categorySettings) == "table" and db.categorySettings or {}
 			for category, effect in pairs(db.categoryEffects) do
 				if type(db.categorySettings[category]) ~= "table" then db.categorySettings[category] = {} end
@@ -1615,6 +1834,7 @@ function handlers.ADDON_LOADED(name)
 		db.categoryEffects = nil
 		if from < 7 then
 			-- le nom et l'icône de l'objet, d'abord réglés ensemble, se règlent chacun à part
+			-- EN: the object's name and icon, at first configured together, are now configured separately
 			local function Split(store)
 				if type(store) ~= "table" then return end
 				if type(store.showLabel) == "boolean" then store.showName, store.showIcon = store.showLabel, store.showLabel end
@@ -1628,6 +1848,7 @@ function handlers.ADDON_LOADED(name)
 		if from < 8 then
 			-- les majuscules cyrilliques se replient désormais en minuscules : les noms retenus sous
 			-- leur ancienne clé passent sous la nouvelle
+			-- EN: Cyrillic capitals now fold to lowercase: names stored under their old key move to the new one
 			local function Rekey(store)
 				if type(store) ~= "table" then return end
 				local moved = {}
@@ -1655,6 +1876,7 @@ function handlers.ADDON_LOADED(name)
 	if not EFFECTS[db.effect] or db.effect == "fallback" then db.effect = DEFAULTS.effect end
 	if not ns.IsFont(db.textFont) then db.textFont = DEFAULTS.textFont end
 	-- réglages propres aux catégories : seuls restent ceux qui ont un sens
+	-- EN: category-specific settings: only those that make sense remain
 	for category, own in pairs(db.categorySettings) do
 		if not DEFAULTS.colors[category] or type(own) ~= "table" then
 			db.categorySettings[category] = nil
@@ -1683,6 +1905,8 @@ function handlers.ADDON_LOADED(name)
 		local store = Store(key)
 		if type(store[key]) == "number" then
 			-- "+ 0" : Lua 5.1 relit en -0 les zéros d'un fichier de réglages qui contient un -0, et l'afficherait tel quel
+			-- EN: "+ 0": Lua 5.1 reads back as -0 the zeros of a settings file that contains a -0, and would display
+			--     it as such
 			store[key] = Clamp(store[key], limits[1], limits[2]) + 0
 		else
 			store[key] = DEFAULTS[key] or CHAR_DEFAULTS[key]
@@ -1693,7 +1917,7 @@ function handlers.ADDON_LOADED(name)
 	BuildCursorLookup()
 	events:UnregisterEvent("ADDON_LOADED")
 	ns.db = db
-	if ns.SetupInterface then ns.SetupInterface() end -- Menu.lua : bouton de la minimap
+	if ns.SetupInterface then ns.SetupInterface() end -- Menu.lua : bouton de la minimap | EN: Menu.lua: minimap button
 end
 
 function handlers.PLAYER_LOGIN()
@@ -1702,6 +1926,8 @@ end
 
 -- Les réglages synchronisés avec le compte peuvent arriver après PLAYER_LOGIN et
 -- écraser nos valeurs : on les réapplique à ces moments-là.
+-- EN: Account-synced settings may arrive after PLAYER_LOGIN and overwrite our values: we reapply them at those
+--     moments.
 function handlers.VARIABLES_LOADED()
 	if db.enabled then ApplyCVars() end
 end
@@ -1720,6 +1946,8 @@ end
 -- Les CVars ne se touchent plus une fois en combat : juste avant, on rouvre l'affichage
 -- natif pour que la lueur continue d'apparaître sur les objets croisés pendant le combat,
 -- ou on le referme si le joueur ne veut pas de lueur en combat.
+-- EN: CVars can no longer be touched once in combat: just before, we reopen the native display so the glow keeps
+--     appearing on objects encountered during combat, or we close it if the player wants no glow in combat.
 function handlers.PLAYER_REGEN_DISABLED()
 	if db.enabled then SetGate(not db.hideInCombat) end
 	inCombat = true
@@ -1741,12 +1969,14 @@ end
 function handlers.NAME_PLATE_UNIT_REMOVED(unit)
 	activeUnits[unit] = nil
 	-- la nameplate de la lueur s'en va : on la dissipe tout de suite, là où elle était
+	-- EN: the glow's nameplate is going away: we dissipate it right away, where it was
 	local plate = GetNamePlate(unit)
 	if plate and plate == glow.anchor then Release() end
 end
 
 function handlers.PLAYER_SOFT_INTERACT_CHANGED(oldTarget, newTarget)
 	-- une nameplate recyclée d'une cible à l'autre ne suffit pas à voir le changement
+	-- EN: a nameplate recycled from one target to another is not enough to detect the change
 	if not IsSecret(oldTarget) and not IsSecret(newTarget) and oldTarget and newTarget and oldTarget ~= newTarget then
 		glow.retarget = glow.anchor ~= nil and not glow.preview
 	end
@@ -1777,8 +2007,10 @@ end
 ---------------------------------------------------------------------------
 -- Réglages
 ---------------------------------------------------------------------------
+-- EN: Settings
 
 -- Replace la lueur après un changement de réglage qui touche son accroche
+-- EN: Repositions the glow after a setting change that affects its anchoring
 local function Reattach()
 	if glow.preview then
 		glow.frame:ClearAllPoints()
@@ -1790,6 +2022,7 @@ local function Reattach()
 end
 
 -- Remet le nom et l'icône de l'objet en accord avec les réglages
+-- EN: Brings the object's name and icon back in line with the settings
 local function RefreshLabel()
 	if glow.preview then
 		ShowLabel(nil, SampleName(glow.category), glow.category)
@@ -1801,6 +2034,8 @@ end
 -- Ce qu'un réglage oblige à refaire quand il change ; ceux qui n'y figurent pas sont relus
 -- à chaque image par l'animation
 -- Remet les icônes de la minimap (NodeScan.lua) en accord avec les réglages
+-- EN: What a setting requires redoing when it changes; those not listed are re-read every frame by the animation.
+--     Brings the minimap icons (NodeScan.lua) back in line with the settings
 local function UpdateNodes()
 	if ns.UpdateNodes then ns.UpdateNodes() end
 end
@@ -1842,16 +2077,19 @@ function APPLY.language()
 	UseLanguage()
 	lastReport = nil
 	if glow.preview then RefreshLabel() end
-	if ns.Retext then ns.Retext() end -- Menu.lua : les textes de la fenêtre
+	if ns.Retext then ns.Retext() end -- Menu.lua : les textes de la fenêtre | EN: Menu.lua: the window's texts
 end
 
 -- Prévient Menu.lua qu'un réglage a changé, que ce soit par le menu ou par une commande
+-- EN: Notifies Menu.lua that a setting has changed, whether through the menu or a command
 local function Notify()
 	if ns.Refresh then ns.Refresh() end
 end
 
 -- Valeur d'un réglage ; pour un réglage de personnalisation, celle qui vaut pour cette
 -- catégorie, ou pour tous les objets si aucune n'est donnée
+-- EN: Value of a setting; for a customization setting, the one that applies to this category, or to all objects if
+--     none is given
 local function GetOption(key, category)
 	if LOOK[key] then return Look(category, key) end
 	return Store(key)[key]
@@ -1860,6 +2098,9 @@ end
 -- Change un réglage, borné s'il est numérique, et en applique les conséquences. Un réglage de
 -- personnalisation se change pour une catégorie, qui en a alors un qui lui est propre, ou pour
 -- tous les objets : c'est la base, et les catégories qui ont le leur le gardent (port retail).
+-- EN: Changes a setting, clamped if numeric, and applies its consequences. A customization setting is changed for a
+--     category, which then has its own, or for all objects: that is the base, and the categories that have their own
+--     keep it (retail port).
 local function SetOption(key, value, category)
 	local limits = LIMITS[key]
 	if limits then value = Clamp(math.floor(value + 0.5), limits[1], limits[2]) end
@@ -1877,11 +2118,13 @@ local function SetOption(key, value, category)
 end
 
 -- Une catégorie a-t-elle des réglages de personnalisation qui lui sont propres ?
+-- EN: Does a category have customization settings of its own?
 local function HasOwnSettings(category)
 	return db.categorySettings[category] ~= nil
 end
 
 -- Cette catégorie remplace-t-elle la valeur de tous les objets pour ce réglage ?
+-- EN: Does this category override the all-objects value for this setting?
 function ns.IsOverridden(key, category)
 	local own = category and db.categorySettings[category]
 	return own ~= nil and own[key] ~= nil
@@ -1889,6 +2132,8 @@ end
 
 -- Donne à une catégorie sa propre valeur d'un réglage (celle qu'elle montre, pour commencer), ou
 -- la lui retire : elle suit alors tous les objets
+-- EN: Gives a category its own value for a setting (the one it currently shows, to start with), or removes it: it
+--     then follows all objects
 function ns.SetOverride(key, category, on)
 	if not (LOOK[key] and category) then return end
 	local own = db.categorySettings[category] or {}
@@ -1899,6 +2144,7 @@ function ns.SetOverride(key, category, on)
 end
 
 -- Retire à une catégorie ses réglages propres : elle reprend ceux de tous les objets
+-- EN: Removes a category's own settings: it goes back to those of all objects
 local function ClearOwnSettings(category)
 	db.categorySettings[category] = nil
 	ApplySilhouette()
@@ -1919,6 +2165,7 @@ end
 
 -- Change la couleur d'une catégorie ; sans couleur, lui rend celle d'origine. La lueur en cours
 -- y vient en fondu.
+-- EN: Changes a category's color; without a color, restores its original one. The current glow fades into it.
 local function SetColor(category, r, g, b)
 	local color, default = db.colors[category], DEFAULTS.colors[category]
 	color[1] = Clamp(r or default[1], 0, 1)
@@ -1929,6 +2176,7 @@ local function SetColor(category, r, g, b)
 end
 
 -- Affiche ou masque le contour de la zone découpée autour du personnage (jamais sauvegardé)
+-- EN: Shows or hides the outline of the cutout area around the character (never saved)
 local function ShowZone(shown)
 	silhouette.show = shown
 	ApplySilhouette()
@@ -1936,6 +2184,7 @@ local function ShowZone(shown)
 end
 
 -- Nom de l'objet du décor visé en ce moment, mis en lumière ou non
+-- EN: Name of the world object currently targeted, highlighted or not
 local function TargetName()
 	local unit = ResolveTarget()
 	if unit and SafeCall(UnitIsGameObject, unit) == true then return SafeCall(UnitName, unit) end
@@ -1943,6 +2192,8 @@ end
 
 -- Écarte un objet par son nom, ou cesse de l'écarter. Renvoie true s'il est désormais écarté,
 -- false s'il ne l'est plus, nil si ce n'est pas un nom.
+-- EN: Excludes an object by name, or stops excluding it. Returns true if it is now excluded, false if it no longer
+--     is, nil if it is not a name.
 local function ToggleIgnored(name)
 	local key = type(name) == "string" and NameKey(name) or ""
 	if key == "" then return nil end
@@ -1954,6 +2205,7 @@ local function ToggleIgnored(name)
 end
 
 -- Écarte l'objet visé, ou cesse de l'écarter, en l'annonçant
+-- EN: Excludes the targeted object, or stops excluding it, announcing it
 local function IgnoreTarget()
 	local name = TargetName()
 	if not name then
@@ -1964,6 +2216,7 @@ local function IgnoreTarget()
 end
 
 -- Noms des objets écartés, par ordre alphabétique
+-- EN: Names of the excluded objects, in alphabetical order
 local function IgnoredNames()
 	local names = {}
 	for _, name in pairs(db.ignored) do names[#names + 1] = name end
@@ -1974,6 +2227,8 @@ end
 -- L'activation, la langue, le bouton de la minimap, ce que Lueur a appris des infobulles et des
 -- objets approchés et les objets écartés ne sont pas des réglages de la lueur : la remise à zéro
 -- n'y touche pas
+-- EN: The enabled state, the language, the minimap button, what Lueur has learned from tooltips and approached
+--     objects, and the excluded objects are not glow settings: resetting does not touch them
 local KEPT_ON_RESET = { enabled = true, language = true, minimap = true, questObjects = true, ignored = true, nodeNames = true,
 	containers = true }
 
@@ -1991,6 +2246,7 @@ local function ResetTo(defaults, store)
 end
 
 -- Remet les réglages du compte et ceux de ce personnage à leurs valeurs d'origine
+-- EN: Resets the account settings and this character's settings to their original values
 local function ResetOptions()
 	ResetTo(DEFAULTS, db)
 	ResetTo(CHAR_DEFAULTS, cdb)
@@ -2005,12 +2261,14 @@ local function ResetOptions()
 end
 
 -- Active ou désactive Lueur en l'annonçant : sans le menu sous les yeux, rien d'autre ne le dit
+-- EN: Enables or disables Lueur, announcing it: without the menu in view, nothing else shows it
 local function Toggle(enabled)
 	SetOption("enabled", enabled)
 	Print(enabled and L.MSG_ENABLED or L.MSG_DISABLED)
 end
 
 -- Ce dont les fichiers suivants se servent
+-- EN: What the following files use
 ns.SafeCall, ns.IsSecret, ns.NameKey, ns.Flag = SafeCall, IsSecret, NameKey, Flag
 ns.LIMITS, ns.CATEGORY_ORDER, ns.Print = LIMITS, CATEGORY_ORDER, Print
 ns.GetOption, ns.SetOption, ns.IsCategoryShown, ns.SetCategory = GetOption, SetOption, IsCategoryShown, SetCategory
@@ -2024,6 +2282,7 @@ function ns.IsPreviewing()
 end
 
 -- État que montre l'aperçu en cours, ou nil
+-- EN: State shown by the current preview, or nil
 function ns.PreviewState()
 	return glow.preview and glow.state
 end
@@ -2033,6 +2292,7 @@ function ns.IsZoneShown()
 end
 
 -- Raison pour laquelle la découpe est indisponible sur ce client, ou nil
+-- EN: Reason the cutout is unavailable on this client, or nil
 local function SilhouetteFailure()
 	return silhouette.failed and L[silhouette.failed]
 end
@@ -2041,10 +2301,14 @@ ns.SilhouetteFailure = SilhouetteFailure
 ---------------------------------------------------------------------------
 -- Touche d'interaction
 ---------------------------------------------------------------------------
+-- EN: Interact key
 
 -- Ramasser, cueillir ou activer l'objet visé est une action protégée : seul un raccourci du
 -- jeu peut la déclencher, pas le code d'un addon. Lueur n'a donc pas de raccourci à lui : il
 -- donne accès à celui du jeu, "Interagir avec la cible", qui agit sur la cible d'interaction.
+-- EN: Looting, gathering or activating the targeted object is a protected action: only a game keybinding can trigger
+--     it, not addon code. So Lueur has no keybinding of its own: it gives access to the game's, "Interagir avec la
+--     cible" (Interact with Target), which acts on the interaction target.
 local INTERACT = "INTERACTTARGET"
 
 local function BindingContext()
@@ -2053,16 +2317,19 @@ local function BindingContext()
 end
 
 -- Renvoie la touche principale du raccourci d'interaction, ou nil
+-- EN: Returns the primary key of the interact keybinding, or nil
 local function GetInteractKey()
 	return (GetBindingKey(INTERACT, nil, BindingContext()))
 end
 
 -- Nom d'une touche tel que le jeu l'affiche
+-- EN: Name of a key as the game displays it
 local function KeyText(key)
 	return GetBindingText and GetBindingText(key) or key
 end
 
 -- Renvoie le nom du raccourci, autre que celui d'interaction, auquel cette touche sert déjà
+-- EN: Returns the name of the keybinding, other than the interact one, that this key is already used for
 local function KeyOwner(key)
 	local action = GetBindingAction(key, nil, BindingContext())
 	if type(action) ~= "string" or action == "" or action == INTERACT then return nil end
@@ -2072,11 +2339,14 @@ end
 -- Donne cette touche au raccourci d'interaction, à la place de sa touche principale ; nil la
 -- lui retire. Le raccourci qui s'en servait la perd. Renvoie false et la raison quand rien
 -- n'a pu changer.
+-- EN: Assigns this key to the interact keybinding, in place of its primary key; nil removes it. The keybinding that
+--     used it loses it. Returns false and the reason when nothing could be changed.
 local function SetInteractKey(key)
 	if InCombatLockdown() then return false, L.MSG_KEY_COMBAT end
 	local context = BindingContext()
 	local first, second = GetBindingKey(INTERACT, nil, context)
 	-- comme le fait le jeu : tout retirer, puis remettre les touches dans l'ordre
+	-- EN: as the game does: remove everything, then put the keys back in order
 	if first then SetBinding(first, nil, context) end
 	if second then SetBinding(second, nil, context) end
 	local bound = key == nil or SetBinding(key, INTERACT, context)
@@ -2094,9 +2364,12 @@ ns.GetInteractKey, ns.SetInteractKey, ns.KeyOwner, ns.KeyText = GetInteractKey, 
 ---------------------------------------------------------------------------
 -- Commandes
 ---------------------------------------------------------------------------
+-- EN: Commands
 
 -- Mot tapé -> nom anglais de la commande ou de l'effet : ceux de la langue affichée, et le
 -- nom affiché de chaque effet. Les noms anglais répondent toujours.
+-- EN: Typed word -> English name of the command or effect: those of the displayed language, and the displayed name
+--     of each effect. The English names always work.
 local ALIASES = {}
 
 function UseLanguage()
@@ -2108,6 +2381,7 @@ function UseLanguage()
 end
 
 -- Remplace {réglage} par ses bornes et {réglage=} par sa valeur par défaut
+-- EN: Replaces {réglage} with its bounds and {réglage=} with its default value
 local function Fill(text)
 	return (text:gsub("{(%w+)(=?)}", function(key, default)
 		if default == "=" then
@@ -2125,6 +2399,8 @@ end
 
 -- Chaque commande reçoit son argument, et le nombre qu'il représente s'il en est un. Celle
 -- qui renvoie false n'a pas su quoi en faire : l'aide s'affiche à sa place.
+-- EN: Each command receives its argument, and the number it represents if it is one. A command that returns false
+--     didn't know what to do with it: the help is shown instead.
 local COMMANDS = {}
 
 function COMMANDS.menu()
@@ -2142,11 +2418,13 @@ function COMMANDS.on() Toggle(true) end
 function COMMANDS.off() Toggle(false) end
 
 -- Ouvre ou ferme la fenêtre d'aperçu (Preview.lua)
+-- EN: Opens or closes the preview window (Preview.lua)
 function COMMANDS.preview()
 	if ns.TogglePreview then ns.TogglePreview() end
 end
 
 -- Un mot tapé désigne-t-il une catégorie ? Renvoie son nom anglais.
+-- EN: Does a typed word designate a category? Returns its English name.
 local function CategoryArg(word)
 	local category = ALIASES[word] or word
 	return DEFAULTS.colors[category] and category
@@ -2155,6 +2433,8 @@ end
 -- Les réglages de personnalisation se donnent à tous les objets ("/lueur size 150") ou à une
 -- catégorie nommée d'abord ("/lueur size ore 150"). Renvoie cette catégorie, ou nil, et le
 -- reste de l'argument.
+-- EN: Customization settings are given to all objects ("/lueur size 150") or to a category named first ("/lueur size
+--     ore 150"). Returns that category, or nil, and the rest of the argument.
 local function Scoped(arg)
 	local first, rest = arg:match("^(%S*)%s*(.-)$")
 	local category = CategoryArg(first)
@@ -2163,11 +2443,13 @@ local function Scoped(arg)
 end
 
 -- Nom d'un réglage dans une annonce, suivi de la catégorie pour laquelle il vient de changer
+-- EN: Name of a setting in an announcement, followed by the category it just changed for
 local function Named(text, category)
 	return category and L.OF_CATEGORY:format(text, CategoryLabel(category)) or text
 end
 
 -- Sans effet reconnu, la commande liste les effets et rappelle celui en place
+-- EN: Without a recognized effect, the command lists the effects and shows the current one
 function COMMANDS.effect(arg)
 	local category, rest = Scoped(arg)
 	local key = ALIASES[rest] or rest
@@ -2183,6 +2465,8 @@ end
 
 -- "/lueur color ore ff8800" colore une catégorie, "/lueur color ore default" lui rend sa couleur
 -- d'origine ; sans couleur, la commande rappelle celle en place
+-- EN: "/lueur color ore ff8800" colors a category, "/lueur color ore default" restores its original color; without a
+--     color, the command shows the current one
 function COMMANDS.color(arg)
 	local category, rest = Scoped(arg)
 	if not category then return false end
@@ -2200,6 +2484,7 @@ function COMMANDS.color(arg)
 end
 
 -- "/lueur shared ore" retire à une catégorie ses réglages propres
+-- EN: "/lueur shared ore" removes a category's own settings
 function COMMANDS.shared(arg)
 	local category = CategoryArg(arg)
 	if not category then return false end
@@ -2209,6 +2494,8 @@ end
 
 -- Commande d'un réglage numérique, annoncé sous le nom et le format qu'il a dans le menu :
 -- `name` et `pattern` nomment des textes ("%d" à défaut de format)
+-- EN: Command for a numeric setting, announced under the name and format it has in the menu: `name` and `pattern`
+--     name texts ("%d" when there is no format)
 local function NumberCommand(key, name, pattern)
 	return function(arg)
 		local category, rest = Scoped(arg)
@@ -2226,6 +2513,8 @@ COMMANDS.text = NumberCommand("textSize", "TEXT_SIZE", "FORMAT_PERCENT")
 
 -- "/lueur font morpheus", "/lueur font ore default" ; sans police reconnue, la commande liste
 -- celles que le client propose et rappelle celle en place
+-- EN: "/lueur font morpheus", "/lueur font ore default"; without a recognized font, the command lists those the
+--     client offers and shows the current one
 function COMMANDS.font(arg)
 	local category, rest = Scoped(arg)
 	local key = ALIASES[rest] or rest
@@ -2244,6 +2533,7 @@ function COMMANDS.font(arg)
 end
 
 -- Commande d'un réglage oui/non de personnalisation, annoncé sous le nom qu'il a dans le menu
+-- EN: Command for a yes/no customization setting, announced under the name it has in the menu
 local function LookToggle(key, name)
 	return function(arg)
 		local category, rest = Scoped(arg)
@@ -2258,6 +2548,8 @@ COMMANDS.name = LookToggle("showName", "SHOW_NAME")
 COMMANDS.icon = LookToggle("showIcon", "SHOW_ICON")
 
 -- Commande d'un réglage oui/non, annoncé par le texte de ce nom, où s'insère "oui" ou "non"
+-- EN: Command for a yes/no setting, announced by the text of that name, into which "oui" (yes) or "non" (no) is
+--     inserted
 local function ToggleCommand(key, message)
 	return function()
 		SetOption(key, not GetOption(key))
@@ -2272,6 +2564,8 @@ COMMANDS.profession = ToggleCommand("hideUntrained", "MSG_HIDE_UNTRAINED")
 
 -- Sans argument, écarte l'objet visé (ou cesse de l'écarter) ; "list" donne les objets écartés,
 -- "clear" les oublie tous ; tout autre argument est le nom d'un objet
+-- EN: Without an argument, excludes the targeted object (or stops excluding it); "list" gives the excluded objects,
+--     "clear" forgets them all; any other argument is an object name
 function COMMANDS.ignore(arg)
 	if arg == "" then
 		IgnoreTarget()
@@ -2342,6 +2636,7 @@ function COMMANDS.arc(_, number)
 end
 
 -- Sans argument, montre la touche d'interaction ; sinon l'assigne ("SHIFT-E"), ou la retire
+-- EN: Without an argument, shows the interact key; otherwise assigns it ("SHIFT-E"), or removes it
 function COMMANDS.key(arg)
 	if arg ~= "" then
 		local key
@@ -2364,6 +2659,8 @@ end
 
 -- Icônes des plantes et des filons sur la minimap (NodeScan.lua). Sans argument, les montre ou
 -- les retire toutes ; "ore" ou "herb", celles d'un métier ; "size 14" règle leur taille.
+-- EN: Herb and ore vein icons on the minimap (NodeScan.lua). Without an argument, shows or removes them all; "ore"
+--     or "herb", those of one profession; "size 14" sets their size.
 local NODE_KEYS = { herb = "nodeHerbs", ore = "nodeOre" }
 local NODE_TEXTS = { herb = "NODE_HERBS", ore = "NODE_ORE" }
 
@@ -2393,6 +2690,8 @@ end
 
 -- Deux métiers de récolte : sans argument, lance ou arrête l'alternance des deux pistages ; un
 -- nombre règle la distance parcourue entre deux bascules
+-- EN: Two gathering professions: without an argument, starts or stops alternating between the two kinds of tracking;
+--     a number sets the distance traveled between two switches
 function COMMANDS.switch(arg, number)
 	if not ns.UpdateNodes then Print(L.MSG_RESTART) return end
 	if number then
@@ -2407,16 +2706,19 @@ function COMMANDS.switch(arg, number)
 end
 
 -- Ce que le dernier balayage de la minimap a lu, et ce que Lueur en a fait
+-- EN: What the last minimap scan read, and what Lueur did with it
 function COMMANDS.scan()
 	if ns.ScanReport then ns.ScanReport() else Print(L.MSG_RESTART) end
 end
 
 -- Nom de la langue réglée, tel que le menu le montre
+-- EN: Name of the configured language, as the menu shows it
 local function LanguageName()
 	return db.language == "auto" and L.LANGUAGE_AUTO or ns.LOCALES[db.language].LANGUAGE_NAME
 end
 
 -- La langue se désigne par "auto", par son code ("frFR"), ses deux premières lettres ou son nom
+-- EN: The language is designated by "auto", by its code ("frFR"), its first two letters or its name
 function COMMANDS.language(arg)
 	local choice
 	if arg == "auto" or arg == Fold(L.LANGUAGE_AUTO) then choice = "auto" end
@@ -2433,6 +2735,7 @@ function COMMANDS.debug()
 end
 
 -- Ce à quoi le nom d'un objet est comparé pour le reconnaître comme objet de quête
+-- EN: What an object's name is compared against to recognize it as a quest object
 function COMMANDS.objectives()
 	RebuildQuestTexts()
 	Print(L.OBJECTIVES_HEADER:format(#questTexts))

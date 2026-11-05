@@ -27,115 +27,148 @@
 -- Ce fichier a son propre cadre et ses propres événements. Il lit les réglages par ns.GetOption
 -- et n'est connu de Lueur.lua que par des crochets gardés : ns.UpdateNodes, ns.NodesFailure,
 -- ns.ScanReport. Vu en jeu le 2026-10-13, deux fois : les icônes se posent sur les points.
+-- EN: Lueur: ore veins and herbs on the minimap. With herb or mineral tracking, the game puts one dot per node on
+--     the minimap, all identical. Lueur replaces each one with the icon of what it yields, inside a ring whose color
+--     says what it is worth for the player's skill, and grayed out if it is in a cave (Nodes.lua knows what a node
+--     is). The game does not tell an addon where these dots are. It does, however, respond to a fake mouse moved
+--     over the minimap (Minimap:SetUsingSoftCursor, Minimap:UpdateMouseoverAtPoint, in screen pixels) with what its
+--     tooltip would say there (C_TooltipInfo.GetMinimapMouseover): the names of the dots located there, in gray for
+--     a node in a cave. A dot responds within a disc around it, about ten to twenty units in radius depending on the
+--     dot. Hence the sweep, a few dozen grid points per frame: 1. the grid: neighboring points that returned the
+--     same name form a group; 2. a round group is a node, whatever its radius, whose center is found by searching
+--     for its edges by bisection; 3. an elongated group, or one truncated by the minimap edge, is given a close
+--     look: its nodes are the centers of the circles its outline draws, each with its own radius. Each node found is
+--     stored by its position on the zone map: between two sweeps its icon thus follows the player frame by frame. An
+--     already placed node keeps its position as long as sweeps find it there again: only the grid is redone each
+--     time. A known node stays the same from one sweep to the next (Finish): it keeps its icon, only moves for a
+--     better measurement than its own, glides there instead of jumping, and only goes away on the second sweep that
+--     fails to find it. Its icon follows the player at sub-pixel positions, like the game's dots, fades in and out,
+--     and fades near the minimap edge. This file has its own frame and its own events. It reads settings through
+--     ns.GetOption and is known to Lueur.lua only through guarded hooks: ns.UpdateNodes, ns.NodesFailure,
+--     ns.ScanReport. Seen in game on 2026-10-13, twice: the icons land on the dots.
 
 local ADDON_NAME, ns = ...
 local L = ns.L
 local SafeCall, IsSecret = ns.SafeCall, ns.IsSecret
 local MEDIA = "Interface\\AddOns\\" .. ADDON_NAME .. "\\Media\\"
 
-local STEP = 10           -- unités de minimap entre deux points de la grille
-local FINE = 3            -- et entre deux points du regard de près
-local PER_FRAME = 60      -- points essayés par image
-local WAIT = 0.75         -- secondes entre deux balayages
-local MAX_SLOW = 8        -- à l'arrêt, sans rien de neuf, l'attente s'allonge jusqu'à ce multiple
-local IDLE_WAIT = 5       -- sans pistage actif : on regarde de loin en loin s'il y en a un
-local SWITCH_WAIT = 1     -- après un changement de pistage, le temps que les points du jeu suivent
-local SWITCH_RETRY = 1.5  -- secondes au bout desquelles une bascule que le jeu n'a pas faite est redemandée
-local SWITCH_TRIES = 3    -- demandes d'une même bascule, la première comprise
-local SWITCH_SETTLE = 0.6 -- secondes après un changement de pistage avant lesquelles rien n'est balayé : les points du jeu changent un instant après lui
-local SWITCH_POLL = 0.5   -- entre deux pistages, le temps d'un sort : on regarde de nouveau sous peu
+local STEP = 10           -- unités de minimap entre deux points de la grille | EN: minimap units between two grid points
+local FINE = 3            -- et entre deux points du regard de près | EN: and between two close-look points
+local PER_FRAME = 60      -- points essayés par image | EN: points tried per frame
+local WAIT = 0.75         -- secondes entre deux balayages | EN: seconds between two sweeps
+local MAX_SLOW = 8        -- à l'arrêt, sans rien de neuf, l'attente s'allonge jusqu'à ce multiple | EN: when standing still with nothing new, the wait grows up to this multiple
+local IDLE_WAIT = 5       -- sans pistage actif : on regarde de loin en loin s'il y en a un | EN: with no active tracking: check every so often whether there is one
+local SWITCH_WAIT = 1     -- après un changement de pistage, le temps que les points du jeu suivent | EN: after a tracking change, the time for the game's dots to catch up
+local SWITCH_RETRY = 1.5  -- secondes au bout desquelles une bascule que le jeu n'a pas faite est redemandée | EN: seconds after which a switch the game did not make is requested again
+local SWITCH_TRIES = 3    -- demandes d'une même bascule, la première comprise | EN: requests for the same switch, the first one included
+local SWITCH_SETTLE = 0.6 -- secondes après un changement de pistage avant lesquelles rien n'est balayé : les points du jeu changent un instant après lui | EN: seconds after a tracking change before which nothing is swept: the game's dots change a moment after it
+local SWITCH_POLL = 0.5   -- entre deux pistages, le temps d'un sort : on regarde de nouveau sous peu | EN: between two trackings, the time of a spell cast: check again shortly
 local MAX_ICONS = 40
-local MAX_FINE = 1000     -- points du regard de près par balayage, sauf pour le premier groupe s'il en demande plus ; au-delà, un groupe garde son centre
-local MAX_DISCS = 6       -- nœuds cherchés dans un groupe
-local MIN_VOTES = 6       -- points de contour qu'un cercle doit expliquer pour compter
-local MIN_LOOSE = 5       -- points d'un groupe qu'aucun nœud trouvé n'explique : ce qu'un nœud de plus doit en expliquer, et à partir de quoi il en manque un
-local TOLERANCE = 2       -- écart admis entre un point de contour et son cercle (unités)
-local AHEAD, WIDE = 1.75, 3.75  -- le point du regard de près le plus proche d'un centre en est à deux unités au plus : de lui, le contour se tient à ce rayon de plus que la distance au premier point qui ne répond pas, à cela près
-local SNUG = 1.5          -- un disque ne contient aucun point qui n'a pas répondu, à cela près (unités)
-local TIGHT, HUG = 1.25, 0.6  -- et le contour qui passe à WIDE de son bord s'en tient pour cette part à TIGHT
-local SPARE = 3           -- un nœud qui explique moins de points que cela, que les autres n'expliquent pas, est de trop
-local SHARE = 0.2         -- groupe relu comme si ses nœuds avaient tous le même rayon : la part de ce qu'explique le premier, que chaque autre doit expliquer
-local WELL, CLEARLY = 3, 3  -- ce que cette lecture laisse au plus d'inexpliqué, et ce dont elle doit faire mieux que l'autre, pour être retenue (points)
-local RINGS = 24           -- anneaux du quadrillage du regard de près où se cherche le bord d'un groupe : plus de deux fois MAX_REACH
-local HALVINGS = 5        -- dichotomies par bord : au quart d'unité près
-local ROUND = 2           -- écart admis entre la plus grande et la plus petite largeur d'un disque seul
-local MIN_APART = 4.5     -- deux nœuds plus proches que cela ne se séparent pas (unités)
-local SQUARE_RATIO, SQUARE_FILL = 1.25, 0.95  -- un groupe dont le rectangle n'est pas plus allongé que cela, et que ses points remplissent pour cette part, est un seul point carré (Fit)
-local MIN_SHARED, SHARED_IN = 5, 1  -- points essayés à cela au moins à l'intérieur de deux disques, où le nom écrit une seule fois dit que c'est un seul nœud (Fit)
-local MIN_REACH, MAX_REACH = 6, 30  -- bornes du rayon de réponse d'un point du jeu (unités)
-local PIN_REACH = 0.6     -- en pas de grille : jusqu'où un groupe est encore le nœud déjà placé là
-local REFIT = 10          -- balayages au bout desquels un groupe déjà séparé est regardé de nouveau
-local MERGE = 15          -- mètres : en deçà, une place trouvée est celle d'un nœud déjà connu du même nom (ou d'un rayon de disque, s'il fait plus)
-local TWIN = 0.6          -- en rayons de disque : un nœud non retrouvé aussi près d'un nœud du même nom que le balayage vient de placer est ce nœud
-local AVERAGE = 8         -- balayages sur lesquels une place approchée se moyenne
-local STILL = 1.5         -- unités : un nœud placé avec précision ne bouge pas pour une mesure exacte si proche,
-local SLACK = 3           -- ni pour une mesure approchée à moins de cela
-local MISSES = 2          -- balayages de suite qui ne lisent aucun nom de son métier, au bout desquels un nœud perd son icône
-local GLIDE = 0.12        -- secondes : une icône dont la place est corrigée y glisse, de cette constante de temps
-local GLIDE_END = 0.3     -- mètres : en deçà, elle y est
-local PICK_REACH = 10     -- mètres : l'icône d'un nœud que le joueur vient de récolter s'en va sans attendre
-local PICK_TIME = 3       -- secondes entre le dernier regard du jeu sur un nœud et la fin du butin, et de là au balayage
-local CAVE_SHADE = 0.55   -- luminosité de l'icône d'un nœud dans une grotte, qui est aussi grisée
-local RING = "node"       -- Media\node.tga : l'anneau en relief qui entoure chaque icône, teinté de la difficulté du nœud
-local RING_HOLE = 17.5 / 32  -- part du côté de cette image que prend l'icône entourée (Lueur-outils\gen_node.py)
-local FLAT_RIM = 3        -- sans cette image, un disque de couleur dépasse l'icône d'autant, de chaque côté
-local PLAIN = { 0.32, 0.29, 0.25 }  -- couleur de l'anneau d'un nœud dont la difficulté ne se sait pas
-local FADE_IN, FADE_OUT = 0.25, 0.2 -- secondes que met une icône à paraître, puis à s'effacer
-local EDGE_IN, EDGE_OUT = 7, 1      -- unités : une icône s'efface de EDGE_IN avant le bord de la minimap à EDGE_OUT après
+local MAX_FINE = 1000     -- points du regard de près par balayage, sauf pour le premier groupe s'il en demande plus ; au-delà, un groupe garde son centre | EN: close-look points per sweep, except for the first group if it needs more; beyond that, a group keeps its center
+local MAX_DISCS = 6       -- nœuds cherchés dans un groupe | EN: nodes searched for in a group
+local MIN_VOTES = 6       -- points de contour qu'un cercle doit expliquer pour compter | EN: outline points a circle must explain to count
+local MIN_LOOSE = 5       -- points d'un groupe qu'aucun nœud trouvé n'explique : ce qu'un nœud de plus doit en expliquer, et à partir de quoi il en manque un | EN: points of a group that no found node explains: how many an extra node must explain, and the count from which one is missing
+local TOLERANCE = 2       -- écart admis entre un point de contour et son cercle (unités) | EN: allowed deviation between an outline point and its circle (units)
+local AHEAD, WIDE = 1.75, 3.75  -- le point du regard de près le plus proche d'un centre en est à deux unités au plus : de lui, le contour se tient à ce rayon de plus que la distance au premier point qui ne répond pas, à cela près | EN: the close-look point nearest a center is at most two units from it: from that point, the outline lies this much farther out than the first point that does not respond, give or take
+local SNUG = 1.5          -- un disque ne contient aucun point qui n'a pas répondu, à cela près (unités) | EN: a disc contains no point that did not respond, give or take this (units)
+local TIGHT, HUG = 1.25, 0.6  -- et le contour qui passe à WIDE de son bord s'en tient pour cette part à TIGHT | EN: and the outline passing within WIDE of its edge stays, for this share, within TIGHT
+local SPARE = 3           -- un nœud qui explique moins de points que cela, que les autres n'expliquent pas, est de trop | EN: a node that explains fewer points than this, not explained by the others, is superfluous
+local SHARE = 0.2         -- groupe relu comme si ses nœuds avaient tous le même rayon : la part de ce qu'explique le premier, que chaque autre doit expliquer | EN: group reread as if its nodes all had the same radius: the share of what the first one explains that every other one must explain
+local WELL, CLEARLY = 3, 3  -- ce que cette lecture laisse au plus d'inexpliqué, et ce dont elle doit faire mieux que l'autre, pour être retenue (points) | EN: the most this reading may leave unexplained, and by how much it must beat the other one, to be kept (points)
+local RINGS = 24           -- anneaux du quadrillage du regard de près où se cherche le bord d'un groupe : plus de deux fois MAX_REACH | EN: rings of the close-look lattice in which a group's edge is searched for: more than twice MAX_REACH
+local HALVINGS = 5        -- dichotomies par bord : au quart d'unité près | EN: bisections per edge: to within a quarter unit
+local ROUND = 2           -- écart admis entre la plus grande et la plus petite largeur d'un disque seul | EN: allowed gap between the largest and smallest width of a single disc
+local MIN_APART = 4.5     -- deux nœuds plus proches que cela ne se séparent pas (unités) | EN: two nodes closer than this are not separated (units)
+local SQUARE_RATIO, SQUARE_FILL = 1.25, 0.95  -- un groupe dont le rectangle n'est pas plus allongé que cela, et que ses points remplissent pour cette part, est un seul point carré (Fit) | EN: a group whose rectangle is no more elongated than this, and which its points fill to this share, is a single square dot (Fit)
+local MIN_SHARED, SHARED_IN = 5, 1  -- points essayés à cela au moins à l'intérieur de deux disques, où le nom écrit une seule fois dit que c'est un seul nœud (Fit) | EN: points tried at least this far inside two discs, where the name written only once says it is a single node (Fit)
+local MIN_REACH, MAX_REACH = 6, 30  -- bornes du rayon de réponse d'un point du jeu (unités) | EN: bounds of a game dot's response radius (units)
+local PIN_REACH = 0.6     -- en pas de grille : jusqu'où un groupe est encore le nœud déjà placé là | EN: in grid steps: how far a group is still the node already placed there
+local REFIT = 10          -- balayages au bout desquels un groupe déjà séparé est regardé de nouveau | EN: sweeps after which an already separated group is looked at again
+local MERGE = 15          -- mètres : en deçà, une place trouvée est celle d'un nœud déjà connu du même nom (ou d'un rayon de disque, s'il fait plus) | EN: meters: below this, a found position is that of an already known node with the same name (or a disc radius, if larger)
+local TWIN = 0.6          -- en rayons de disque : un nœud non retrouvé aussi près d'un nœud du même nom que le balayage vient de placer est ce nœud | EN: in disc radii: a node not found again this close to a node of the same name that the sweep just placed is that node
+local AVERAGE = 8         -- balayages sur lesquels une place approchée se moyenne | EN: sweeps over which an approximate position is averaged
+local STILL = 1.5         -- unités : un nœud placé avec précision ne bouge pas pour une mesure exacte si proche, | EN: units: a precisely placed node does not move for an exact measurement this close,
+local SLACK = 3           -- ni pour une mesure approchée à moins de cela | EN: nor for an approximate measurement closer than this
+local MISSES = 2          -- balayages de suite qui ne lisent aucun nom de son métier, au bout desquels un nœud perd son icône | EN: consecutive sweeps that read no name of its profession, after which a node loses its icon
+local GLIDE = 0.12        -- secondes : une icône dont la place est corrigée y glisse, de cette constante de temps | EN: seconds: an icon whose position is corrected glides there, with this time constant
+local GLIDE_END = 0.3     -- mètres : en deçà, elle y est | EN: meters: below this, it is there
+local PICK_REACH = 10     -- mètres : l'icône d'un nœud que le joueur vient de récolter s'en va sans attendre | EN: meters: the icon of a node the player has just gathered goes away immediately
+local PICK_TIME = 3       -- secondes entre le dernier regard du jeu sur un nœud et la fin du butin, et de là au balayage | EN: seconds between the game's last look at a node and the end of looting, and from there to the sweep
+local CAVE_SHADE = 0.55   -- luminosité de l'icône d'un nœud dans une grotte, qui est aussi grisée | EN: brightness of the icon of a node in a cave, which is also grayed out
+local RING = "node"       -- Media\node.tga : l'anneau en relief qui entoure chaque icône, teinté de la difficulté du nœud | EN: Media\node.tga: the embossed ring around each icon, tinted by the node's difficulty
+local RING_HOLE = 17.5 / 32  -- part du côté de cette image que prend l'icône entourée (Lueur-outils\gen_node.py) | EN: share of this image's side taken up by the enclosed icon (Lueur-outils\gen_node.py)
+local FLAT_RIM = 3        -- sans cette image, un disque de couleur dépasse l'icône d'autant, de chaque côté | EN: without this image, a colored disc extends beyond the icon by this much on each side
+local PLAIN = { 0.32, 0.29, 0.25 }  -- couleur de l'anneau d'un nœud dont la difficulté ne se sait pas | EN: ring color of a node whose difficulty is unknown
+local FADE_IN, FADE_OUT = 0.25, 0.2 -- secondes que met une icône à paraître, puis à s'effacer | EN: seconds an icon takes to appear, then to fade out
+local EDGE_IN, EDGE_OUT = 7, 1      -- unités : une icône s'efface de EDGE_IN avant le bord de la minimap à EDGE_OUT après | EN: units: an icon fades out from EDGE_IN before the minimap edge to EDGE_OUT past it
 
 -- Sorts de pistage, d'après Blizzard_Minimap\Mainline\Minimap.lua (build 1.60.1.70245)
+-- EN: Tracking spells, from Blizzard_Minimap\Mainline\Minimap.lua (build 1.60.1.70245)
 local FINDERS = { [2383] = "herb", [8387] = "herb", [2580] = "ore", [8388] = "ore" }
 local OPTION = { herb = "nodeHerbs", ore = "nodeOre" }
 -- Image d'un nœud dont l'objet n'est pas connu : celle du bouton de pistage, sinon l'icône du métier
+-- EN: Image for a node whose item is unknown: the tracking button's, otherwise the profession icon
 local KIND_ATLAS = { herb = "professions_tracking_herb", ore = "professions_tracking_ore" }
 local KIND_ICON = { herb = "Interface\\Icons\\Trade_Herbalism", ore = "Interface\\Icons\\Trade_Mining" }
 local CIRCLE = "CircleMask"
 local CIRCLE_FILE = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
 -- La flèche du joueur au centre de la minimap : l'atlas que le client nomme parmi les flèches de la
 -- minimap (WowB.exe, build 70338), sinon l'image des clients d'avant, à une taille estimée
+-- EN: The player arrow at the center of the minimap: the atlas the client names among the minimap arrows (WowB.exe,
+--     build 70338), otherwise the image used by earlier clients, at an estimated size
 local PLAYER_ARROW = "ui-hud-minimap-arrow-player"
 local PLAYER_ARROW_FILE, PLAYER_ARROW_SIZE = "Interface\\Minimap\\MinimapArrow", 24
 
-local driver = CreateFrame("Frame")  -- fait tourner le balayage (OnUpdate) et reçoit les événements
-local holder              -- cadre posé sur la minimap, qui porte les icônes
-local pointer             -- la flèche du joueur, redessinée par-dessus une icône qui la recouvre
-local covering = false    -- une icône recouvre-t-elle la flèche du joueur ?
-local spare = {}          -- icônes qu'aucun nœud ne porte plus : le prochain qui en demande une la reprend
-local markers = {}        -- nœuds connus : ceux du dernier balayage, ceux qu'il vient de manquer, ceux gardés d'un autre pistage
-local ghosts = {}         -- nœuds qui ne le sont plus, le temps que leur icône s'efface
-local busy = false        -- une icône au moins glisse vers sa place, paraît ou s'efface : le suivi ne s'arrête pas
-local pickedAt            -- quand le butin s'est refermé pour la dernière fois
-local probes = 0          -- points essayés depuis le chargement
-local last = {}           -- ce qu'a coûté le dernier balayage : points, secondes, groupes regardés de près
-local scan                -- balayage en cours
-local wait, slow = 0, 1   -- secondes avant le prochain, et de combien l'attente est allongée
+local driver = CreateFrame("Frame")  -- fait tourner le balayage (OnUpdate) et reçoit les événements | EN: runs the sweep (OnUpdate) and receives the events
+local holder              -- cadre posé sur la minimap, qui porte les icônes | EN: frame laid over the minimap, holding the icons
+local pointer             -- la flèche du joueur, redessinée par-dessus une icône qui la recouvre | EN: the player arrow, redrawn on top of an icon that covers it
+local covering = false    -- une icône recouvre-t-elle la flèche du joueur ? | EN: does an icon cover the player arrow?
+local spare = {}          -- icônes qu'aucun nœud ne porte plus : le prochain qui en demande une la reprend | EN: icons no node holds anymore: the next node that needs one takes it
+local markers = {}        -- nœuds connus : ceux du dernier balayage, ceux qu'il vient de manquer, ceux gardés d'un autre pistage | EN: known nodes: those from the last sweep, those it just missed, those kept from another tracking
+local ghosts = {}         -- nœuds qui ne le sont plus, le temps que leur icône s'efface | EN: nodes that are gone, while their icon fades out
+local busy = false        -- une icône au moins glisse vers sa place, paraît ou s'efface : le suivi ne s'arrête pas | EN: at least one icon is gliding to its position, appearing or fading out: following does not stop
+local pickedAt            -- quand le butin s'est refermé pour la dernière fois | EN: when looting last closed
+local probes = 0          -- points essayés depuis le chargement | EN: points tried since loading
+local last = {}           -- ce qu'a coûté le dernier balayage : points, secondes, groupes regardés de près | EN: what the last sweep cost: points, seconds, groups given a close look
+local scan                -- balayage en cours | EN: sweep in progress
+local wait, slow = 0, 1   -- secondes avant le prochain, et de combien l'attente est allongée | EN: seconds until the next one, and how much the wait is extended
 -- Rayon courant dans lequel un point du jeu répond (unités), par métier : `value`, ajusté sur les
 -- nœuds isolés ; `measured`, s'il l'a été ou n'est encore qu'une estimation. Chaque nœud a le
 -- sien (`marker.reach`), lu de son disque : celui-ci ne sert qu'à défaut, et à relire un groupe de
 -- nœuds serrés comme s'ils l'avaient tous (Fit). Ni un rayon pour tous les points, ni un rayon par
 -- métier n'ont tenu en jeu (2026-10-13 : des nœuds montrés par paires d'icônes, à dix-huit unités
 -- l'une de l'autre puis côte à côte, ce que donne un disque cherché avec un rayon trop petit).
+-- EN: Current radius within which a game dot responds (units), per profession: `value`, fitted on isolated nodes;
+--     `measured`, whether it has been or is still only an estimate. Each node has its own (`marker.reach`), read
+--     from its disc: this one is only a fallback, and is used to reread a group of tightly packed nodes as if they
+--     all had it (Fit). Neither one radius for all dots nor one radius per profession held up in game (2026-10-13:
+--     nodes shown as pairs of icons, eighteen units apart and then side by side, which is what a disc searched for
+--     with too small a radius produces).
 local reaches = { herb = { value = 15, measured = false }, ore = { value = 15, measured = false } }
-local grid, gridWidth     -- points de la grille, pour cette largeur de minimap
-local left, bottom, scale, width  -- place et échelle de la minimap pendant le balayage
-local broken              -- erreur levée par le jeu pendant un balayage : il ne reprend pas
-local masks               -- nil : pas encore essayé ; false : ce client ne sait pas découper une icône
-local lastNames = {}      -- nom lu par le dernier balayage -> { points, gray }
-local seen = {}           -- ce d'où le dernier suivi est parti : carte, place, orientation, rayon
-local spot = {}           -- où était le joueur à la fin du dernier balayage
+local grid, gridWidth     -- points de la grille, pour cette largeur de minimap | EN: grid points, for this minimap width
+local left, bottom, scale, width  -- place et échelle de la minimap pendant le balayage | EN: minimap position and scale during the sweep
+local broken              -- erreur levée par le jeu pendant un balayage : il ne reprend pas | EN: error raised by the game during a sweep: it does not resume
+local masks               -- nil : pas encore essayé ; false : ce client ne sait pas découper une icône | EN: nil: not tried yet; false: this client cannot crop an icon
+local lastNames = {}      -- nom lu par le dernier balayage -> { points, gray } | EN: name read by the last sweep -> { points, gray }
+local seen = {}           -- ce d'où le dernier suivi est parti : carte, place, orientation, rayon | EN: where the last following started from: map, position, facing, radius
+local spot = {}           -- où était le joueur à la fin du dernier balayage | EN: where the player was at the end of the last sweep
 -- alternance des pistages : métier actif (kind), lieu de la dernière bascule (map, x, y), balayage fait depuis (scanned),
 -- la bascule demandée au jeu tant qu'il ne l'a pas faite : le métier voulu (want), quand (at), combien de fois (tries) ;
 -- et quand le jeu a annoncé pour la dernière fois un changement de pistage (changed)
+-- EN: tracking alternation: active profession (kind), place of the last switch (map, x, y), sweep done since then
+--     (scanned), the switch requested from the game until it has made it: the wanted profession (want), when (at),
+--     how many times (tries); and when the game last announced a tracking change (changed)
 local turn = {}
 local looting = false
-local refit = false       -- le joueur vient de récolter : les groupes déjà séparés sont à revoir
-local hooked = false      -- l'infobulle de la minimap est-elle complétée ?
+local refit = false       -- le joueur vient de récolter : les groupes déjà séparés sont à revoir | EN: the player has just gathered: already separated groups must be rechecked
+local hooked = false      -- l'infobulle de la minimap est-elle complétée ? | EN: has the minimap tooltip been extended?
 
 local function Wanted(kind)
 	return ns.GetOption(OPTION[kind])
 end
 
 -- Nom du texte qui dit pourquoi ce client ne permet pas le balayage, ou nil
+-- EN: Name of the text explaining why this client does not allow the sweep, or nil
 local function Failure()
 	if broken then return "FAIL_SCAN_ERROR" end
 	if not (Minimap and Minimap.UpdateMouseoverAtPoint and Minimap.SetUsingSoftCursor
@@ -163,9 +196,12 @@ end
 ---------------------------------------------------------------------------
 -- Où est le joueur, et ce que montre la minimap
 ---------------------------------------------------------------------------
+-- EN: Where the player is, and what the minimap shows
 
 -- Carte de la zone, place du joueur sur elle (0 à 1, y vers le sud) et taille de la carte en
 -- mètres ; nil quand le jeu ne le dit pas (en instance)
+-- EN: Zone map, the player's position on it (0 to 1, y pointing south) and the map's size in meters; nil when the
+--     game does not say (in an instance)
 local function MapPosition()
 	if not (C_Map and C_Map.GetBestMapForUnit and C_Map.GetPlayerMapPosition and C_Map.GetMapWorldSize) then return nil end
 	local map = SafeCall(C_Map.GetBestMapForUnit, "player")
@@ -182,6 +218,8 @@ end
 
 -- Rayon de la minimap en mètres, si elle tourne avec le joueur, et l'orientation du joueur
 -- (radians, sens inverse des aiguilles depuis le nord)
+-- EN: Minimap radius in meters, whether it rotates with the player, and the player's facing (radians,
+--     counterclockwise from north)
 local function View()
 	local radius = SafeCall(C_Minimap.GetViewRadius)
 	if type(radius) ~= "number" or radius <= 0 then return nil end
@@ -195,17 +233,23 @@ end
 ---------------------------------------------------------------------------
 -- Icônes
 ---------------------------------------------------------------------------
+-- EN: Icons
 
 -- Le jeu accroche chaque texture à la grille des pixels. Une icône qui suit le joueur avancerait
 -- alors par à-coups d'un pixel, là où les points du jeu glissent : ses textures ne s'y accrochent
 -- donc pas, et se posent entre deux pixels comme eux. (Vu en jeu le 2026-10-13, accrochées puis
 -- posées par Lueur sur un pixel entier : « se refresh à chaque pas du personnage ».)
+-- EN: The game snaps every texture to the pixel grid. An icon following the player would then move in one-pixel
+--     jerks, whereas the game's dots glide: so its textures are not snapped, and sit between pixels as the dots do.
+--     (Seen in game on 2026-10-13, snapped and then placed by Lueur on a whole pixel: « se refresh à chaque pas du
+--     personnage » (refreshes with every step the character takes).)
 local function Loose(region)
 	if region.SetSnapToPixelGrid then region:SetSnapToPixelGrid(false) end
 	if region.SetTexelSnappingBias then region:SetTexelSnappingBias(0) end
 end
 
 -- Découpe en rond une texture d'une icône ; sans effet sur le client qui ne sait pas
+-- EN: Crops an icon texture into a circle; no effect on a client that cannot
 local function Clip(icon, region)
 	if masks == false then return end
 	local ok, mask = pcall(icon.frame.CreateMaskTexture, icon.frame)
@@ -232,6 +276,10 @@ end
 -- qui se recouvrent restent chacune d'un seul tenant.
 -- Sans l'image de l'anneau (Lueur mis à jour sans relancer le jeu, qui ne charge un nouveau fichier
 -- qu'à son démarrage), l'anneau est un disque de couleur sous l'image (`flat`).
+-- EN: An icon: a frame (`frame`, through which it is positioned) holding the node's image cropped round (`face`)
+--     and, on top, the ring around it (`ring`). One frame per icon: two overlapping icons each stay in one piece.
+--     Without the ring image (Lueur updated without restarting the game, which only loads a new file at startup),
+--     the ring is a colored disc under the image (`flat`).
 local function NewIcon(parent)
 	local frame = CreateFrame("Frame", nil, parent)
 	local icon = { frame = frame }
@@ -256,9 +304,15 @@ end
 -- la même place et dans le même sens, le temps qu'une icône la recouvre. (Demandé le 2026-10-15 :
 -- « l'icone de navigation (le pointeur) sur la minimap qui représente le joueur doit passer
 -- au-dessus des icones des ressources ».)
+-- EN: The game draws the player arrow along with the minimap itself, beneath everything an addon puts on it: an icon
+--     the player stands on hides it. So it is redrawn above the icons, at the same position and facing, while an
+--     icon covers it. (Requested on 2026-10-15: « l'icone de navigation (le pointeur) sur la minimap qui représente
+--     le joueur doit passer au-dessus des icones des ressources » (the navigation icon (the pointer) on the minimap
+--     that represents the player must go above the resource icons).)
 local function Turn()
 	local _, turning, facing = View()
 	-- (la minimap qui tourne garde la flèche pointée vers le haut)
+	-- EN: (a rotating minimap keeps the arrow pointing up)
 	if turning then facing = 0 end
 	if facing then pointer.texture:SetRotation(facing) end
 	pointer.texture:SetShown(facing ~= nil)
@@ -289,6 +343,7 @@ end
 
 -- La moitié de la diagonale de la flèche : une icône plus proche que cela du centre de la minimap,
 -- augmenté de son propre rayon, la recouvre
+-- EN: Half the arrow's diagonal: an icon closer than this to the minimap center, plus its own radius, covers it
 local function PointerReach()
 	if not pointer then return PLAYER_ARROW_SIZE / 2 end
 	local w, h = pointer.texture:GetWidth() or 0, pointer.texture:GetHeight() or 0
@@ -296,6 +351,7 @@ local function PointerReach()
 end
 
 -- Image d'un nœud, et si c'est un atlas
+-- EN: A node's image, and whether it is an atlas
 local function Picture(node)
 	local file = ns.NodeIcon(node)
 	if file then return file, false end
@@ -306,6 +362,9 @@ end
 -- Donne à une icône l'image d'un nœud, à son anneau la couleur de sa difficulté (`level`, ou nil :
 -- inconnue), et la grise s'il est dans une grotte. `size` est le diamètre de l'image ; l'anneau
 -- l'entoure. Rien n'est refait de ce qui n'a pas changé.
+-- EN: Gives an icon a node's image, its ring the color of its difficulty (`level`, or nil: unknown), and grays it
+--     out if it is in a cave. `size` is the image diameter; the ring surrounds it. Nothing that has not changed is
+--     redone.
 local function DrawIcon(icon, node, level, cave, size)
 	local picture, atlas = Picture(node)
 	if icon.picture ~= picture then
@@ -314,7 +373,7 @@ local function DrawIcon(icon, node, level, cave, size)
 			icon.face:SetAtlas(picture)
 		else
 			icon.face:SetTexture(picture)
-			icon.face:SetTexCoord(0.08, 0.92, 0.08, 0.92) -- sans le bord dessiné dans les icônes du jeu
+			icon.face:SetTexCoord(0.08, 0.92, 0.08, 0.92) -- sans le bord dessiné dans les icônes du jeu | EN: without the border drawn into the game's icons
 		end
 	end
 	if icon.size ~= size then
@@ -329,6 +388,7 @@ local function DrawIcon(icon, node, level, cave, size)
 		local r, g, b = PLAIN[1], PLAIN[2], PLAIN[3]
 		if level then r, g, b = ns.DifficultyColor(level) end
 		-- l'anneau est une image en gris, que la couleur teinte : son cerne et son ombre, noirs, le restent
+		-- EN: the ring is a grayscale image tinted by the color: its outline and shadow, which are black, stay black
 		if icon.flat then icon.ring:SetColorTexture(r, g, b, 1) else icon.ring:SetVertexColor(r, g, b) end
 	end
 	cave = cave and true or false
@@ -347,6 +407,7 @@ local function ShowIcon(icon, shown)
 end
 
 -- Rend l'icône d'un nœud, qui servira à un autre
+-- EN: Releases a node's icon, to be reused by another
 local function Free(marker)
 	local icon = marker.icon
 	if not icon then return end
@@ -356,6 +417,7 @@ local function Free(marker)
 end
 
 -- Un nœud n'est plus : son icône s'efface là où elle est, au lieu de disparaître d'un coup
+-- EN: A node is gone: its icon fades out where it is, instead of vanishing at once
 local function Fade(marker)
 	if not (marker.icon and marker.icon.shown) then
 		Free(marker)
@@ -368,6 +430,8 @@ end
 
 -- Ce qu'une icône garde d'opacité à cet endroit : elle s'efface en passant le bord de la minimap,
 -- au lieu d'en déborder puis de disparaître d'un coup
+-- EN: How much opacity an icon keeps at this spot: it fades out as it crosses the minimap edge, instead of spilling
+--     over and then vanishing at once
 local function Edge(marker, half)
 	if marker.lost or not Wanted(marker.node.kind) then return 0 end
 	local x, y = (marker.sx or marker.x) - half, (marker.sy or marker.y) - half
@@ -376,6 +440,8 @@ end
 
 -- Pose l'icône d'un nœud à sa place, avec cette opacité. Un nœud garde la sienne tant qu'il se
 -- montre : aucune ne change d'image parce que la liste des nœuds a changé d'ordre.
+-- EN: Places a node's icon at its position, with this opacity. A node keeps its own icon as long as it is shown:
+--     none changes image because the node list changed order.
 local function Paint(marker, alpha, size)
 	local icon = marker.icon
 	if not icon then
@@ -386,6 +452,7 @@ local function Paint(marker, alpha, size)
 	local x, y = marker.sx or marker.x, marker.sy or marker.y
 	icon.frame:SetPoint("CENTER", holder, "BOTTOMLEFT", x, y)
 	-- l'anneau déborde l'image : RING_HOLE en dit la part
+	-- EN: the ring extends beyond the image: RING_HOLE gives the share
 	local half, reach = Minimap:GetWidth() / 2, size / RING_HOLE / 2 + PointerReach()
 	if alpha > 0 and (x - half) ^ 2 + (y - half) ^ 2 < reach * reach then covering = true end
 	if icon.alpha ~= alpha then
@@ -396,6 +463,7 @@ local function Paint(marker, alpha, size)
 end
 
 -- Met les icônes en accord avec les nœuds connus, et avec ceux qui s'en vont
+-- EN: Brings the icons in line with the known nodes, and with those that are leaving
 local function Draw()
 	if not holder then return end
 	local size, shown, now, half = ns.GetOption("nodeSize"), 0, GetTime(), Minimap:GetWidth() / 2
@@ -427,6 +495,7 @@ local function Draw()
 end
 
 -- Oublie tous les nœuds, sur-le-champ
+-- EN: Forgets all nodes, immediately
 local function Clear()
 	for _, marker in ipairs(markers) do Free(marker) end
 	for _, marker in ipairs(ghosts) do Free(marker) end
@@ -436,10 +505,12 @@ end
 
 -- Où le point (mx, my) de la carte de la zone tombe sur la minimap, pour ce que `seen` dit du
 -- joueur et d'elle : x, y, sa distance au centre (unités), et en mètres
+-- EN: Where the point (mx, my) of the zone map falls on the minimap, given what `seen` says about the player and the
+--     minimap: x, y, its distance from the center (units), and in meters
 local function Spot(mx, my)
 	local east, north = (mx - seen.x) * seen.wide, (seen.y - my) * seen.tall
 	local yards = math.sqrt(east * east + north * north)
-	local way = math.atan2(east, north) -- sens des aiguilles depuis le nord
+	local way = math.atan2(east, north) -- sens des aiguilles depuis le nord | EN: clockwise from north
 	if seen.turning then way = way + seen.facing end
 	local distance = yards / seen.radius * seen.half
 	return seen.half + distance * math.sin(way), seen.half + distance * math.cos(way), distance, yards
@@ -449,6 +520,9 @@ end
 -- la place du nœud sur la carte. Sans carte (en instance), elles restent où le balayage les a vues.
 -- Un nœud dont un balayage vient de corriger la place (`dmx`, `dmy` : ce qui l'en sépare encore)
 -- montre son icône en chemin (`sx`, `sy`).
+-- EN: Between two sweeps a node does not move, but the player does: each icon is repositioned from the node's
+--     position on the map. Without a map (in an instance), they stay where the sweep saw them. A node whose position
+--     a sweep has just corrected (`dmx`, `dmy`: the remaining offset) shows its icon on the way (`sx`, `sy`).
 local function Track(marker, rest)
 	if marker.map == seen.map then
 		local distance
@@ -466,6 +540,8 @@ local function Track(marker, rest)
 	elseif marker.map then
 		-- rangé sur une autre carte que celle où le joueur vient de passer : sa place ne se sait
 		-- plus, et le prochain balayage le retrouvera s'il est encore là
+		-- EN: stored on a map other than the one the player has just moved to: its position is no longer known, and
+		--     the next sweep will find it again if it is still there
 		marker.far, marker.lost = true, true
 	end
 end
@@ -487,7 +563,7 @@ local function Follow(elapsed)
 		for _, marker in ipairs(markers) do Track(marker, rest) end
 		for _, marker in ipairs(ghosts) do Track(marker, rest) end
 	elseif busy then
-		busy = false -- sans carte, rien ne suit le joueur ; les icônes qui paraissent ou s'effacent continuent
+		busy = false -- sans carte, rien ne suit le joueur ; les icônes qui paraissent ou s'effacent continuent | EN: without a map, nothing follows the player; icons that are appearing or fading out carry on
 	else
 		return
 	end
@@ -497,8 +573,10 @@ end
 ---------------------------------------------------------------------------
 -- Ce que dit l'infobulle de la minimap
 ---------------------------------------------------------------------------
+-- EN: What the minimap tooltip says
 
 -- Le jeu écrit en gris le nom d'un nœud qui est dans une grotte
+-- EN: The game writes in gray the name of a node that is in a cave
 local function Gray(r, g, b)
 	if IsSecret(r) or IsSecret(g) or IsSecret(b) or type(r) ~= "number" or type(g) ~= "number" or type(b) ~= "number" then return false end
 	return math.abs(r - g) < 0.1 and math.abs(g - b) < 0.1 and r < 0.9
@@ -509,6 +587,10 @@ end
 -- couleur à lui : c'est alors celle de la ligne qui compte. `arrow` : le nom vient après la flèche
 -- d'un nœud plus haut ou plus bas que le joueur (Minimap-PositionArrows), que le jeu montre au lieu
 -- d'un point. Les mêmes lignes reviennent sans cesse : ce qui en a été tiré est gardé.
+-- EN: The names on a tooltip line: it holds one per row, each with its images (|T…|t, |A…|a) and sometimes its own
+--     color (|cAARRGGBB, |cnNOM:). `gray` is nil for a name with no color of its own: the line's color then applies.
+--     `arrow`: the name comes after the arrow of a node above or below the player (Minimap-PositionArrows), which
+--     the game shows instead of a dot. The same lines keep coming back: what was extracted from them is cached.
 local parsed, parsedCount = {}, 0
 
 local function Names(text)
@@ -537,6 +619,9 @@ end
 -- jeu de ce nom qui y répondent ensemble ? Retenu d'une session à l'autre (db.nodeTwice) : rien ne
 -- dit d'avance qu'il le fait, et Fit ne se fie qu'alors à un nom écrit une seule fois, sauf
 -- après une flèche.
+-- EN: Has the game already written the same name twice at one point, as it would for two game dots of that name
+--     responding there together? Remembered across sessions (db.nodeTwice): nothing says in advance that it does,
+--     and only then does Fit trust a name written just once, except after an arrow.
 local function Doubled()
 	return ns.db ~= nil and ns.db.nodeTwice == true
 end
@@ -545,6 +630,9 @@ end
 -- `point`, pour chaque nom que le jeu y donne, 1, ou 2 s'il l'écrit en gris. Un regard de près
 -- (`job`) note en plus les noms que le jeu y écrit plus d'une fois (job.many), et ceux qu'il écrit
 -- après une flèche (job.arrows).
+-- EN: Tries a point of the minimap (x, y in units from its bottom-left corner) and records under `point`, for each
+--     name the game gives there, 1, or 2 if it writes it in gray. A close look (`job`) also records the names the
+--     game writes there more than once (job.many), and those it writes after an arrow (job.arrows).
 local written, writtenCount = {}, 0
 
 local function Probe(x, y, hits, point, job)
@@ -590,6 +678,7 @@ end
 local scratch = {}
 
 -- Le jeu nomme-t-il ce point du jeu en (x, y) ?
+-- EN: Does the game name this game dot at (x, y)?
 local function Under(name, x, y)
 	for key in pairs(scratch) do scratch[key] = nil end
 	Probe(x, y, scratch, 1)
@@ -599,14 +688,17 @@ end
 ---------------------------------------------------------------------------
 -- Des points de grille aux nœuds
 ---------------------------------------------------------------------------
+-- EN: From grid points to nodes
 
 -- Un point de grille a pour numéro colonne + 1024 × rangée ; voici ses huit voisins, et les quatre
 -- qui le touchent
+-- EN: A grid point is numbered column + 1024 × row; here are its eight neighbors, and the four that touch it
 local ROW = 1024
 local AROUND = { -ROW - 1, -ROW, -ROW + 1, -1, 1, ROW - 1, ROW, ROW + 1 }
 local BESIDE = { { -1, -1, 0 }, { 1, 1, 0 }, { -ROW, 0, -1 }, { ROW, 0, 1 } }
 
 -- Les groupes de points voisins d'un ensemble : une liste de listes de numéros
+-- EN: The groups of neighboring points in a set: a list of lists of numbers
 local function Groups(set)
 	local groups, taken = {}, {}
 	for first in pairs(set) do
@@ -631,6 +723,7 @@ local function Groups(set)
 end
 
 -- Le rectangle qui tient un groupe et son milieu, en unités : gauche, bas, droite, haut, x, y
+-- EN: The rectangle enclosing a group, and its middle, in units: left, bottom, right, top, x, y
 local function Box(keys)
 	local x0, y0, x1, y1, sx, sy = math.huge, math.huge, -math.huge, -math.huge, 0, 0
 	for _, key in ipairs(keys) do
@@ -643,6 +736,8 @@ end
 
 -- Le jeu écrit-il ce nom en gris au point de l'ensemble le plus proche de (x, y) ? nil si ce
 -- point n'en fait pas partie
+-- EN: Does the game write this name in gray at the point of the set nearest to (x, y)? nil if that point is not part
+--     of it
 local function GrayAt(set, x, y, step)
 	local value = set[Round(x / step) + ROW * Round(y / step)]
 	if value then return value == 2 end
@@ -651,6 +746,9 @@ end
 -- Ce que vaut la place qu'un balayage donne à un nœud. Du pire au meilleur : le milieu d'un groupe
 -- que rien n'a séparé ; un disque que le bord de la minimap tronque, dont la place est tirée vers
 -- le centre ; un nœud d'un groupe, lu de son contour ; un nœud seul dont les bords ont été trouvés.
+-- EN: How good the position a sweep gives a node is. From worst to best: the middle of a group that nothing has
+--     separated; a disc truncated by the minimap edge, whose position is pulled toward the center; a node of a
+--     group, read from its outline; a single node whose edges were found.
 local ROUGH, RIM_PLACE, FITTED, SURE = 0, 1, 2, 3
 
 local function Worth(place)
@@ -660,12 +758,16 @@ local function Worth(place)
 end
 
 -- Rayon du disque où répond ce nœud : le sien, s'il a été lu, sinon le rayon courant de son métier
+-- EN: Radius of the disc in which this node responds: its own, if it has been read, otherwise its profession's
+--     current radius
 local function Radius(marker)
 	return marker.reach or reaches[marker.node.kind].value
 end
 
 -- Un nœud seul vient d'être mesuré : le rayon courant de son métier s'en approche, et le premier
 -- remplace l'estimation de départ
+-- EN: A single node has just been measured: its profession's current radius moves toward it, and the first one
+--     replaces the initial estimate
 local function Learn(kind, radius)
 	local known = reaches[kind]
 	radius = math.max(MIN_REACH, math.min(MAX_REACH, radius))
@@ -678,6 +780,8 @@ end
 
 -- Les nœuds déjà bien placés (un par un, ou lus du contour de leur groupe) dont le disque touche ce
 -- groupe, et s'ils l'expliquent en entier. `map` : la carte où est le joueur.
+-- EN: The already well-placed nodes (individually, or read from their group's outline) whose disc touches this
+--     group, and whether they fully explain it. `map`: the map the player is on.
 local function Placed(name, keys, map)
 	local mine, used, whole = {}, {}, true
 	for _, key in ipairs(keys) do
@@ -699,6 +803,7 @@ local function Placed(name, keys, map)
 end
 
 -- Un groupe touche-t-il le bord de la minimap, où le disque d'un nœud est tronqué ?
+-- EN: Does a group touch the minimap edge, where a node's disc is truncated?
 local function AtRim(keys)
 	local half = width / 2
 	local edge = (half - 1.5 * STEP) ^ 2
@@ -710,6 +815,8 @@ end
 
 -- Le nœud isolé déjà placé avec précision à cet endroit, s'il y en a un : il garde sa place.
 -- `wide` : la largeur du groupe, qui ne dépasse pas le disque de ce nœud s'il y est seul.
+-- EN: The isolated node already placed precisely at this spot, if there is one: it keeps its position. `wide`: the
+--     group's width, which does not exceed this node's disc if it is alone there.
 local function Pinned(name, x, y, wide)
 	local near = (PIN_REACH * STEP) ^ 2
 	for _, marker in ipairs(markers) do
@@ -726,6 +833,11 @@ end
 -- les garder le montrerait en double pendant REFIT balayages. Le groupe est alors relu.
 -- (Vu en jeu le 2026-10-14 : deux Feuillargent « dans un groupe », à dix unités l'une de l'autre,
 -- pour une seule sur la minimap, gardées par le dernier balayage sans regard de près.)
+-- EN: The nodes a previous sweep already separated in this group, if they still fully explain it: separating them is
+--     expensive, and they do not move. Unless a single disc, in their midst, explains it just as well: it may be a
+--     single node that a close look read as several, and keeping them would show it doubled for REFIT sweeps. The
+--     group is then reread. (Seen in game on 2026-10-14: two Feuillargent (Silverleaf) « dans un groupe » (in a
+--     group), ten units apart, for a single one on the minimap, kept by the last sweep without a close look.)
 local function Known(name, keys)
 	if refit then return nil end
 	local inside, mine = {}, {}
@@ -760,6 +872,8 @@ end
 -- Jusqu'où ce nom répond depuis (x, y) dans la direction (dx, dy), cherché jusqu'à `limit` unités.
 -- nil s'il répond encore au bout ; le second résultat dit alors si c'est le bord de la minimap
 -- qui a arrêté la recherche.
+-- EN: How far this name responds from (x, y) in direction (dx, dy), searched up to `limit` units. nil if it still
+--     responds at the end; the second result then says whether it was the minimap edge that stopped the search.
 local function Edge(name, x, y, dx, dy, limit)
 	local half = width / 2
 	local px, py, rim = x - half, y - half, half - 1
@@ -782,9 +896,14 @@ end
 -- est trouvé (et place.reach, le rayon de ce disque), place.rim si le bord de la minimap cache un
 -- de ses bords, place.merged s'il n'a pas la forme d'un disque seul. Un groupe rond est un nœud
 -- quel que soit son rayon : rien n'assure que tous les points du jeu répondent d'aussi loin.
+-- EN: Searches for the exact center of a group that may be a single disc. On exit: place.exact if it is found (and
+--     place.reach, the radius of that disc), place.rim if the minimap edge hides one of its edges, place.merged if
+--     it does not have the shape of a single disc. A round group is a node whatever its radius: nothing guarantees
+--     that all game dots respond from as far away.
 local function Refine(place)
 	local name, x, y = place.name, place.x, place.y
 	-- un bord se cherche jusqu'un peu au-delà de ce que la grille a vu du groupe
+	-- EN: an edge is searched for a little beyond what the grid saw of the group
 	local box = place.box
 	local limit = math.min(2 * MAX_REACH, math.max(box[3] - box[1], box[4] - box[2]) / 2 + 2 * STEP)
 	if not Under(name, x, y) then
@@ -793,6 +912,8 @@ local function Refine(place)
 	end
 	-- la demi-largeur du groupe le long d'une droite qui passe par (x, y), et de combien son
 	-- milieu s'écarte de ce point ; nil si un bord manque
+	-- EN: the group's half-width along a line through (x, y), and how far its middle is from that point; nil if an
+	--     edge is missing
 	local function Chord(dx, dy)
 		local back, backRim = Edge(name, x, y, -dx, -dy, limit)
 		local ahead, aheadRim = Edge(name, x, y, dx, dy, limit)
@@ -808,6 +929,8 @@ local function Refine(place)
 	-- Un disque seul a la même largeur dans toutes les directions. Deux nœuds voisins dont les
 	-- disques se recouvrent font un groupe allongé, qui ne dépasse pas toujours la taille d'un
 	-- disque sur la grille.
+	-- EN: A single disc has the same width in every direction. Two neighboring nodes whose discs overlap make an
+	--     elongated group, which does not always exceed the size of a disc on the grid.
 	local slant = math.sqrt(0.5)
 	local least, most, sum = math.huge, 0, 0
 	for _, way in ipairs({ { 1, 0 }, { 0, 1 }, { slant, slant }, { slant, -slant } }) do
@@ -826,6 +949,8 @@ end
 
 -- Le regard de près sur un groupe : les points, FINE unités d'écart, de son rectangle élargi
 -- d'un pas de grille, qui touchent une case de la grille où le groupe a répondu ou sa voisine
+-- EN: The close look at a group: the points, FINE units apart, of its rectangle widened by one grid step, that touch
+--     a grid cell where the group responded or a neighboring cell
 local function NewJob(place, x0, y0, x1, y1)
 	local half = width / 2
 	local nearby, points = {}, {}
@@ -846,6 +971,8 @@ end
 
 -- Le cercle qui passe au plus près de ces points (moindres carrés) : son centre et son rayon, ou
 -- nil s'ils sont trop peu ou alignés
+-- EN: The circle passing closest to these points (least squares): its center and radius, or nil if there are too few
+--     of them or they are collinear
 local function Circle(points)
 	local count = #points
 	if count < 3 then return nil end
@@ -868,6 +995,9 @@ end
 -- Le regard de près sur un groupe déborde sur ses voisins : de ses points qui ont répondu, ceux
 -- qui tiennent au groupe, de proche en proche depuis un point de la grille où il a répondu. Le reste
 -- est le disque d'un nœud d'un autre groupe, qui a son propre regard.
+-- EN: The close look at a group spills over onto its neighbors: of its points that responded, those connected to the
+--     group, step by step from a grid point where it responded. The rest is the disc of a node from another group,
+--     which has its own close look.
 local function Own(job, inside)
 	local at, mine, stack = {}, {}, {}
 	for _, point in ipairs(inside) do at[point[4]] = point end
@@ -920,6 +1050,21 @@ end
 -- Essayé hors jeu sur des grappes tirées au hasard (Lueur-outils\harness\scan.py), de même rayon
 -- ou de rayons mêlés, et sur un champ de nœuds traversé en courant (walk.py, MIX=2) : un nœud seul
 -- ne donne jamais deux icônes ; il en manque une quand un disque est presque couvert par ses voisins.
+-- EN: The nodes of a group given a close look: a list of { x, y, radius }. Each game dot has its own radius, which
+--     nothing tells in advance: it is read from the group. A node's center is a point of the group; its disc ends at
+--     the first point that did not respond, and the group's outline lies at that distance around it. The point that
+--     thus sees the most outline yields a node, that outline is removed, and this repeats as long as enough of it
+--     remains. An extra node is only admitted if it explains points of the group that no found node explains, and
+--     any node that, at the end, explains nothing the others do not explain is removed: a single disc, whatever its
+--     radius, is one node and only one. (Seen in game on 2026-10-13: discs were searched for there at the radius
+--     measured on other nodes of the same profession, 11.2 units that day. A dot that responded from a little
+--     farther away then gave two icons side by side, « un doublon qui n'existe pas en vrai » (a duplicate that
+--     doesn't actually exist).) Tightly packed nodes, all with the same radius, read poorly this way: four in a
+--     square pass for two or three bigger discs. So the group is read a second time at the profession's current
+--     radius, as if all its nodes had it, and this reading is only kept if it explains the group clearly better than
+--     the first one (Misfit). Tested outside the game on randomly drawn clusters (Lueur-outils\harness\scan.py),
+--     with the same radius or mixed radii, and on a field of nodes crossed at a run (walk.py, MIX=2): a single node
+--     never gives two icons; one is missing when a disc is almost covered by its neighbors.
 local function Fit(job)
 	local set = job.hits[job.place.name]
 	if not set then return nil end
@@ -942,6 +1087,11 @@ local function Fit(job)
 	-- est plus loin que ce qui est trouvé. (Les comparer tous deux à deux prenait des dizaines de
 	-- millisecondes sur un gros groupe : une image qui saute.) Un point est un centre possible si un
 	-- disque y tient.
+	-- EN: The outline runs halfway between a point that responded and a neighbor that did not. The distance from
+	--     each point of the group to the nearest point that did not respond is searched ring by ring around it, on
+	--     the close-look lattice, stopping as soon as a ring is farther away than what has been found. (Comparing
+	--     them all pairwise took tens of milliseconds on a large group: a dropped frame.) A point is a possible
+	--     center if a disc fits there.
 	local centers = {}
 	for _, point in ipairs(inside) do
 		local key, ox, oy = point[4], 0, 0
@@ -966,8 +1116,9 @@ local function Fit(job)
 		if point[3] >= MIN_REACH and point[3] <= MAX_REACH + FINE then centers[#centers + 1] = point end
 	end
 
-	local contour, discs -- le contour que les nœuds trouvés n'expliquent pas encore, et ces nœuds
+	local contour, discs -- le contour que les nœuds trouvés n'expliquent pas encore, et ces nœuds | EN: the outline the found nodes do not explain yet, and those nodes
 	-- les points du contour restant qui se tiennent à ce rayon de (x, y), à `slack` près ; et leur nombre
+	-- EN: the remaining outline points that lie at this radius from (x, y), within `slack`; and their count
 	local function Near(x, y, radius, slack)
 		local low, high, list = math.max(0, radius - slack) ^ 2, (radius + slack) ^ 2, {}
 		for _, point in ipairs(contour) do
@@ -985,6 +1136,7 @@ local function Fit(job)
 		return count
 	end
 	-- combien de points du groupe, qu'aucun nœud trouvé n'explique (point[6]), sont à ce rayon de (x, y)
+	-- EN: how many points of the group that no found node explains (point[6]) are at this radius from (x, y)
 	local function Gain(x, y, radius)
 		local near, count = radius * radius, 0
 		for _, point in ipairs(inside) do
@@ -993,6 +1145,7 @@ local function Fit(job)
 		return count
 	end
 	-- ce qui sépare (x, y) du plus proche point qui n'a pas répondu
+	-- EN: the distance from (x, y) to the nearest point that did not respond
 	local function Room(x, y)
 		local room = math.huge
 		for _, point in ipairs(outside) do
@@ -1004,12 +1157,15 @@ local function Fit(job)
 	local function Apart(x, y)
 		for _, disc in ipairs(discs) do
 			-- trop près d'un nœud déjà trouvé : ce serait le même
+			-- EN: too close to an already found node: it would be the same one
 			if (disc[1] - x) ^ 2 + (disc[2] - y) ^ 2 < MIN_APART * MIN_APART then return false end
 		end
 		return true
 	end
 	-- Un nœud de plus : les points du groupe que son disque explique, et le contour qu'il explique,
 	-- ne compteront plus pour un autre (ni ce qui reste de contour dans son disque)
+	-- EN: One more node: the group points its disc explains, and the outline it explains, will no longer count for
+	--     another one (nor will the outline remaining inside its disc)
 	local function Add(x, y, radius)
 		discs[#discs + 1] = { x, y, radius }
 		local cover, high, rest = (radius + 1) ^ 2, (radius + TOLERANCE) ^ 2, {}
@@ -1023,6 +1179,8 @@ local function Fit(job)
 	end
 	-- Le vrai centre est entre les points du regard de près : autour de (x, y), à l'unité près, c'est
 	-- le milieu des places qui expliquent le plus de contour à ce rayon
+	-- EN: The true center lies between the close-look points: around (x, y), to within one unit, it is the middle of
+	--     the positions that explain the most outline at this radius
 	local function Center(x, y, radius)
 		local tries, top = {}, 0
 		for dx = -2, 2 do
@@ -1041,6 +1199,9 @@ local function Fit(job)
 	-- Le centre et le rayon du disque qui passe près de là : le rayon est la distance moyenne à
 	-- laquelle le contour se tient du centre. Le contour d'un voisin, là où il rejoint celui-ci, tire
 	-- cette moyenne vers le haut : le disque s'arrête pourtant avant le premier point qui n'a pas répondu.
+	-- EN: The center and radius of the disc passing near there: the radius is the average distance at which the
+	--     outline lies from the center. A neighbor's outline, where it joins this one, pulls that average up: yet
+	--     the disc stops before the first point that did not respond.
 	local function Polish(x, y, radius)
 		for _ = 1, 2 do
 			x, y = Center(x, y, radius)
@@ -1055,6 +1216,8 @@ local function Fit(job)
 	-- Un disque est-il possible là ? Il ne contient aucun point qui n'a pas répondu, et le contour
 	-- qui passe près de son bord le suit : un cercle qui engloberait plusieurs nœuds coupe leur
 	-- contour au lieu de le suivre.
+	-- EN: Is a disc possible there? It contains no point that did not respond, and the outline passing near its edge
+	--     follows it: a circle enclosing several nodes cuts across their outline instead of following it.
 	local function Sound(x, y, radius)
 		return radius >= MIN_REACH and radius <= MAX_REACH and Room(x, y) >= radius - SNUG
 			and Votes(x, y, radius, TIGHT) >= HUG * Votes(x, y, radius, WIDE)
@@ -1063,6 +1226,10 @@ local function Fit(job)
 	-- contour (0 si aucun disque n'est possible là). Le cercle qui passe au plus près du contour vu
 	-- de ce point le donne, d'où que ce point le voie ; vu de trop large, ce contour est parfois
 	-- celui de plusieurs nœuds : il est alors repris de plus près, puis de ce point seul.
+	-- EN: The disc whose outline this point sees: its center, its radius, and how much outline it explains (0 if no
+	--     disc is possible there). The circle passing closest to the outline seen from this point gives it, wherever
+	--     this point sees it from; seen too widely, this outline is sometimes that of several nodes: it is then
+	--     retried more narrowly, then from this point alone.
 	local function Disc(center)
 		local x, y, radius
 		for _, slack in ipairs({ WIDE, TOLERANCE }) do
@@ -1077,6 +1244,7 @@ local function Fit(job)
 	end
 
 	-- Lit le groupe : chaque nœud à son rayon, ou tous au rayon `same`
+	-- EN: Reads the group: each node at its own radius, or all at radius `same`
 	local function Read(same)
 		contour, discs = outline, {}
 		for _, point in ipairs(inside) do point[5], point[6] = math.huge, nil end
@@ -1085,6 +1253,8 @@ local function Fit(job)
 			-- Le meilleur centre : celui autour duquel le plus de contour se tient à distance égale.
 			-- Le contour restant ne fait que diminuer : un centre qui n'en expliquait pas assez
 			-- (point[5]) n'est pas recompté.
+			-- EN: The best center: the one around which the most outline lies at an equal distance. The remaining
+			--     outline only shrinks: a center that did not explain enough of it (point[5]) is not recounted.
 			local best, bestVotes = nil, MIN_VOTES - 1
 			for _, center in ipairs(centers) do
 				if center[5] > bestVotes then
@@ -1103,6 +1273,7 @@ local function Fit(job)
 			if not best then break end
 			if same then
 				-- il faut un arc de contour, et pas des miettes laissées par les nœuds déjà trouvés
+				-- EN: an arc of outline is needed, not crumbs left over by the already found nodes
 				local x, y = Center(best[1], best[2], same)
 				local votes = Votes(x, y, same, TOLERANCE)
 				first = first or votes
@@ -1111,6 +1282,8 @@ local function Fit(job)
 			else
 				-- Il faut un arc de contour autour de lui, et, pour un nœud de plus, des points du groupe
 				-- qu'aucun nœud trouvé n'explique : sans quoi ce centre est écarté, et l'on passe au suivant.
+				-- EN: It needs an arc of outline around it and, for an extra node, group points that no found node
+				--     explains: otherwise this center is discarded, and we move on to the next one.
 				local x, y, radius, votes = Disc(best)
 				if votes >= MIN_VOTES and Apart(x, y) and (not discs[1] or Gain(x, y, radius) >= MIN_LOOSE) then
 					Add(x, y, radius)
@@ -1123,6 +1296,9 @@ local function Fit(job)
 		-- Un nœud pris entre deux autres ne montre presque rien de son contour. Il reste alors des
 		-- points du groupe qu'aucun nœud trouvé n'explique : le point qui en explique le plus en donne
 		-- un, du rayon du premier nœud du groupe faute de pouvoir lire le sien.
+		-- EN: A node caught between two others shows almost none of its outline. Points of the group that no found
+		--     node explains then remain: the point that explains the most of them yields a node, with the radius of
+		--     the group's first node, since its own cannot be read.
 		local radius = discs[1][3]
 		while #discs < MAX_DISCS do
 			local best, bestCount, counts = nil, 0, {}
@@ -1145,6 +1321,9 @@ local function Fit(job)
 	-- Ce qu'une lecture explique mal du groupe : les points de son contour qui ne sont sur le bord
 	-- d'aucun de ses disques, ou qui sont dans l'un d'eux ; les points qui n'ont pas répondu et
 	-- qu'un disque contient ; et, pour moitié, les points du groupe qu'aucun disque ne contient.
+	-- EN: What a reading explains poorly about the group: its outline points that lie on the edge of none of its
+	--     discs, or inside one of them; the points that did not respond and that a disc contains; and, at half
+	--     weight, the group points that no disc contains.
 	local function Misfit(list)
 		local count = 0
 		for _, point in ipairs(outline) do
@@ -1179,6 +1358,9 @@ local function Fit(job)
 	-- Le moins de nœuds possible : celui qui n'explique rien que les autres n'expliquent est de trop,
 	-- ni points du groupe ni contour. (Deux nœuds serrés se lisent parfois comme un disque plus gros,
 	-- puis chacun pour lui-même : c'est le gros qui s'en va.)
+	-- EN: As few nodes as possible: one that explains nothing the others do not, neither group points nor outline,
+	--     is superfluous. (Two tightly packed nodes are sometimes read as one bigger disc, and then each on its own:
+	--     it is the big one that goes.)
 	local function Idle(list, index)
 		local disc, own = list[index], 0
 		local function Elsewhere(point, slack)
@@ -1223,6 +1405,18 @@ local function Fit(job)
 	-- client, plus de la moitié des paires serrées). Lueur ne s'y fie donc qu'une fois qu'il l'a vu faire,
 	-- ou pour une flèche : les trois doublons vus en jeu en étaient, et deux flèches du même nom qui se
 	-- recouvrent sont rares.
+	-- EN: Where two game dots respond together, the tooltip writes their name twice, one row each. Two discs whose
+	--     overlap was tested without the name ever being written twice there are therefore a single game dot that
+	--     does not respond in a circle: they are merged into one, between them, large enough to cover both (the
+	--     fourth field says so: its radius is not a measurement). (Seen in game on 2026-10-15, twice: a Pacifique
+	--     (Peacebloom), then a Terrestrine (Earthroot), shown as two icons « dans un groupe » (in a group), ten
+	--     units apart, with the radius of the other herbs; each time, the dot under the mouse carried the arrow of a
+	--     node below the player. In the fake client, a dot that responds 1.2 times farther in width than in height
+	--     thus gives two icons on every sweep: the group's shape alone does not distinguish them from two round
+	--     dots, at the resolution of the close look.) The game writing the name of two overlapping dots twice has
+	--     never been seen, and if it did not, two nearby nodes would have only one icon (in the fake client, more
+	--     than half of tight pairs). So Lueur only relies on it once it has seen it happen, or for an arrow: the
+	--     three duplicates seen in game were arrows, and two overlapping arrows with the same name are rare.
 	local twice = job.many[job.place.name] or {}
 	local trusted = Doubled() or job.arrows[job.place.name] == true
 	local function Alone(a, b)
@@ -1246,6 +1440,8 @@ local function Fit(job)
 				if Alone(a, b) then
 					-- son centre est le milieu des points du groupe que ces deux disques couvraient, son
 					-- rayon va jusqu'au plus éloigné
+					-- EN: its center is the middle of the group points those two discs covered, and its radius
+					--     reaches the farthest one
 					local sx, sy, count, mine = 0, 0, 0, {}
 					for _, point in ipairs(inside) do
 						if (point[1] - a[1]) ^ 2 + (point[2] - a[2]) ^ 2 <= (a[3] + 1) ^ 2
@@ -1275,6 +1471,13 @@ local function Fit(job)
 	-- qui remplissent leur rectangle, presque carré, sont donc ce seul point : un disque en son milieu,
 	-- qui couvre le carré. Deux points ronds qui se recouvrent laissent vides les coins du rectangle,
 	-- et deux carrés côte à côte en font un rectangle allongé.
+	-- EN: A game dot may respond within a square rather than a disc: seen in game on 2026-10-15 (/lueur scan, the
+	--     zone of a Terrestrine (Earthroot): 22 units per side, with straight edges; the radii of 11 to 14 units
+	--     read for the other herbs point the same way). A single square is sometimes read as two discs side by side,
+	--     ten units apart: the duplicates of that day, aligned like those of the fake client (one single square in
+	--     ten, in width or in height). Group points that fill their nearly square rectangle are therefore this
+	--     single dot: a disc at its middle, covering the square. Two overlapping round dots leave the corners of the
+	--     rectangle empty, and two squares side by side make an elongated rectangle.
 	local function Square(list)
 		if not list or not list[2] then return list end
 		local x0, y0, x1, y1, mine = math.huge, math.huge, -math.huge, -math.huge, {}
@@ -1285,6 +1488,7 @@ local function Fit(job)
 		local wide, tall = x1 - x0 + FINE, y1 - y0 + FINE
 		if math.max(wide, tall) > SQUARE_RATIO * math.min(wide, tall) then return list end
 		-- ni plus grand qu'un point du jeu : deux carrés serrés en font un rectangle plus large
+		-- EN: nor larger than a game dot: two tightly packed squares make a wider rectangle
 		if math.max(wide, tall) > 2 * reaches[job.place.node.kind].value + FINE then return list end
 		local asked, answered = 0, 0
 		for _, key in ipairs(job.points) do
@@ -1300,6 +1504,8 @@ local function Fit(job)
 
 	-- La seconde lecture ne se fait que si elle peut l'emporter : elle est retenue si elle explique
 	-- bien le groupe, et nettement mieux que la première.
+	-- EN: The second reading is only done if it can win: it is kept if it explains the group well, and clearly
+	--     better than the first one.
 	local own, left = Read(), math.huge
 	if own then own, left = Prune(own) end
 	local known = reaches[job.place.node.kind]
@@ -1316,6 +1522,8 @@ end
 
 -- Un groupe que ce balayage ne regardera pas de près, pour ne pas y passer trop de temps : les nœuds
 -- déjà bien placés qui le touchent y restent ; à défaut il a une place, son milieu.
+-- EN: A group this sweep will not give a close look, so as not to spend too much time on it: the already well-placed
+--     nodes that touch it stay; failing that, it gets one position, its middle.
 local function Rough(places, place, map)
 	local mine = map and Placed(place.name, place.keys, map) or {}
 	if not mine[1] then
@@ -1329,11 +1537,13 @@ end
 
 -- La grille est faite : chaque groupe de points d'un nœud voulu devient une place, exacte tout
 -- de suite si un balayage précédent la connaît, sinon à affiner ou à regarder de près
+-- EN: The grid is done: each group of points of a wanted node becomes a position, exact right away if a previous
+--     sweep knows it, otherwise to be refined or given a close look
 local function Sort()
 	local places, refines, jobs, fine = {}, {}, {}, 0
-	local map = MapPosition() -- sans carte, une place ne se garde pas d'un balayage à l'autre
+	local map = MapPosition() -- sans carte, une place ne se garde pas d'un balayage à l'autre | EN: without a map, a position is not kept from one sweep to the next
 
-	local heard = {} -- les métiers dont ce balayage a lu au moins un nom
+	local heard = {} -- les métiers dont ce balayage a lu au moins un nom | EN: the professions for which this sweep read at least one name
 	lastNames = {}
 	for name, set in pairs(scan.hits) do
 		local points, gray = 0, false
@@ -1350,11 +1560,15 @@ local function Sort()
 				local place = { name = name, node = node, set = set, keys = keys, x = x, y = y, box = { x0, y0, x1, y1 } }
 				-- ce qu'un disque seul couvre au plus de grille : tout groupe qui pourrait en être un est
 				-- essayé comme tel, quel que soit le rayon des nœuds déjà mesurés
+				-- EN: the most grid a single disc can cover: any group that could be one is tried as such, whatever
+				--     the radius of the nodes already measured
 				local span = 2 * MAX_REACH + 1
 				local single = x1 - x0 <= span and y1 - y0 <= span
 				local pin = map and Pinned(name, x, y, math.max(x1 - x0, y1 - y0)) or nil
 				-- placé quand le bord de la minimap le tronquait, et tout entier dedans désormais :
 				-- son centre peut se chercher par ses bords
+				-- EN: placed while the minimap edge truncated it, and now entirely inside: its center can be found
+				--     from its edges
 				if pin and pin.rim and math.sqrt((x - width / 2) ^ 2 + (y - width / 2) ^ 2) + Radius(pin) + STEP < width / 2 then
 					pin = nil
 				end
@@ -1362,6 +1576,8 @@ local function Sort()
 				if map and not pin and not split and AtRim(keys) then
 					-- Au bord de la minimap la place d'un nœud se lit mal, et son disque tronqué passe pour
 					-- plusieurs : les nœuds déjà bien placés qui expliquent ce groupe à eux seuls y restent.
+					-- EN: At the minimap edge a node's position reads poorly, and its truncated disc passes for
+					--     several: the already well-placed nodes that explain this group by themselves stay.
 					local mine, whole = Placed(name, keys, map)
 					if whole then split = mine end
 				end
@@ -1394,6 +1610,9 @@ end
 -- Un nœud d'un groupe est-il dans une grotte ? Là où plusieurs nœuds du groupe répondent, le jeu
 -- écrit leur nom une fois par nœud, en gris ou non, sans dire lequel est lequel : on s'en tient
 -- donc aux points où celui-ci répond seul, et à défaut à son centre.
+-- EN: Is a node of a group in a cave? Where several nodes of the group respond, the game writes their name once per
+--     node, gray or not, without saying which is which: so we stick to the points where this one responds alone, and
+--     failing that to its center.
 local function GrayOf(job, set, discs, disc)
 	local gray, plain = 0, 0
 	for _, key in ipairs(job.points) do
@@ -1414,6 +1633,7 @@ local function GrayOf(job, set, discs, disc)
 end
 
 -- Un groupe regardé de près donne ses nœuds, ou à défaut son milieu
+-- EN: A group given a close look yields its nodes, or failing that its middle
 local function EndJob(job)
 	local place = job.place
 	local discs = Fit(job)
@@ -1421,6 +1641,7 @@ local function EndJob(job)
 	scan.looked = scan.looked + 1
 	if discs then
 		-- un seul nœud, tout entier dans la minimap : son disque dit de combien un point de ce métier répond
+		-- EN: a single node, entirely inside the minimap: its disc tells how far a dot of this profession responds
 		local alone = #discs == 1
 		if alone and not discs[1][4] and not place.rim and not AtRim(place.keys) then Learn(place.node.kind, discs[1][3]) end
 		for _, disc in ipairs(discs) do
@@ -1434,6 +1655,8 @@ end
 
 -- Un point de la grille de cet ensemble est-il à moins de `range` unités de (x, y) ? L'ensemble est
 -- ce qu'un nom a répondu (numéro du point -> valeur), ou la liste des points d'un groupe (`list`).
+-- EN: Is a grid point of this set less than `range` units from (x, y)? The set is what a name responded with (point
+--     number -> value), or the list of a group's points (`list`).
 local function Heard(set, x, y, range, list)
 	if not set then return false end
 	for first, second in pairs(set) do
@@ -1447,6 +1670,10 @@ end
 -- le nœud déjà placé là (`pin`), sinon le nœud connu du même nom le plus proche d'elle, sinon un
 -- nœud nouveau. Un nœud connu reste le même objet d'un balayage à l'autre : il garde son icône,
 -- et sa place ne change que pour une mesure meilleure que celle qu'il a.
+-- EN: The sweep is done: its positions become the known nodes. Each position is, in order, the node already placed
+--     there (`pin`), otherwise the nearest known node with the same name, otherwise a new node. A known node stays
+--     the same object from one sweep to the next: it keeps its icon, and its position only changes for a better
+--     measurement than the one it has.
 local function Finish()
 	local half = width / 2
 	local radius, turning, facing = View()
@@ -1457,6 +1684,7 @@ local function Finish()
 	local function Keep(marker, place)
 		claimed[marker] = true
 		-- ce que Lueur sait de ce nom a pu changer depuis : l'objet d'une plante que le client vient de charger
+		-- EN: what Lueur knows about this name may have changed since: the item of a herb the client has just loaded
 		marker.node, marker.held, marker.missed = place.node, nil, 0
 		found[#found + 1] = marker
 	end
@@ -1470,6 +1698,8 @@ local function Finish()
 			if place.single then marker.fitted = nil end
 			-- (un nœud d'un groupe garde ce que le regard de près en a dit : la grille ne sépare pas
 			-- le gris de l'un de celui de son voisin)
+			-- EN: (a node of a group keeps what the close look said about it: the grid does not separate one node's
+			--     gray from its neighbor's)
 			if not marker.fitted then
 				local gray = GrayAt(place.set, marker.x, marker.y, STEP)
 				if gray ~= nil then marker.gray = gray end
@@ -1479,13 +1709,19 @@ local function Finish()
 
 	-- Les autres places, chacune avec sa place sur la carte de la zone, et ce qui la sépare de chaque
 	-- nœud connu du même nom : en mètres sur la carte, en unités de minimap sans elle
-	local perYard = anchored and half / radius or 1 -- unités de minimap par unité d'écart
+	-- EN: The other positions, each with its position on the zone map, and its distance to each known node with the
+	--     same name: in meters on the map, in minimap units without it
+	local perYard = anchored and half / radius or 1 -- unités de minimap par unité d'écart | EN: minimap units per unit of offset
 	local matches = {}
 	for _, place in ipairs(loose) do
 		-- Deux nœuds du même nom à moins d'un rayon de disque l'un de l'autre répondent ensemble, et un
 		-- balayage les place tous les deux : une place seule, aussi près d'un nœud connu, est ce nœud.
 		-- Au bord de la minimap le disque d'un nœud est tronqué, sa place mal lue, et son contour passe
 		-- parfois pour deux nœuds : c'est de plus loin qu'une place vue là est le nœud que l'on connaît.
+		-- EN: Two nodes with the same name less than a disc radius apart respond together, and a sweep places both
+		--     of them: a lone position this close to a known node is that node. At the minimap edge a node's disc is
+		--     truncated, its position poorly read, and its outline sometimes passes for two nodes: so a position
+		--     seen there is taken as the known node from farther away.
 		local reach = place.reach or reaches[place.node.kind].value
 		local limit = math.max(anchored and MERGE or 0, reach / perYard)
 		local rimLimit = limit + 2 * reach / perYard
@@ -1493,7 +1729,7 @@ local function Finish()
 		if anchored then
 			local dx, dy = place.x - half, place.y - half
 			local yards = math.sqrt(dx * dx + dy * dy) / half * radius
-			local way = math.atan2(dx, dy) -- sens des aiguilles depuis le haut de la minimap
+			local way = math.atan2(dx, dy) -- sens des aiguilles depuis le haut de la minimap | EN: clockwise from the top of the minimap
 			if turning then way = way - facing end
 			place.yards = yards
 			place.mx, place.my = px + yards * math.sin(way) / wide, py - yards * math.cos(way) / tall
@@ -1507,6 +1743,7 @@ local function Finish()
 					gap = math.sqrt((old.x - place.x) ^ 2 + (old.y - place.y) ^ 2)
 				end
 				-- (de plus loin, seulement si ce nœud peut être ce qui a répondu là : son disque touche le groupe)
+				-- EN: (from farther away, only if this node can be what responded there: its disc touches the group)
 				if gap <= limit or ((place.rim or old.rim) and gap <= rimLimit and Heard(place.keys, old.x, old.y, Radius(old) + STEP / 2 + 1, true)) then
 					matches[#matches + 1] = { gap = gap, place = place, marker = old }
 				end
@@ -1517,6 +1754,8 @@ local function Finish()
 
 	-- Donne à un nœud la place d'une mesure, `weight` fois moins lourde que celle qu'il avait (0 : elle
 	-- la remplace). Son icône part d'où elle était.
+	-- EN: Gives a node the position of a measurement, `weight` times lighter than the one it had (0: it replaces
+	--     it). Its icon starts from where it was.
 	local function Put(marker, place, weight)
 		if anchored then
 			local mx, my = (marker.mx * weight + place.mx) / (weight + 1), (marker.my * weight + place.my) / (weight + 1)
@@ -1537,21 +1776,27 @@ local function Finish()
 			if gray ~= nil then marker.gray = gray end
 			local units = match.gap * perYard
 			local worth, had = Worth(place), marker.worth
-			local weight -- ce que pèse la place connue devant la nouvelle ; nil : elle reste
+			local weight -- ce que pèse la place connue devant la nouvelle ; nil : elle reste | EN: the weight of the known position against the new one; nil: it stays
 			if worth > had then
 				weight = 0
 			elseif worth < had then
 				-- une mesure qui vaut moins ne déplace pas un nœud, sauf le regard de près qui trouve loin
 				-- de lui un nœud que ses bords disaient seul : c'étaient deux nœuds pris pour un
+				-- EN: a lesser measurement does not move a node, except a close look that finds, far from it, a node
+				--     its edges said was alone: it was two nodes taken for one
 				if worth == FITTED and units >= SLACK then weight = 0 end
 			elseif worth == SURE then
 				-- retrouvé là à l'erreur de mesure près : il n'en bouge pas
+				-- EN: found there again within measurement error: it does not move
 				if units >= STILL then weight = 0 end
 			elseif worth == RIM_PLACE then
 				-- au bord, la meilleure des deux est celle qui a vu le plus du disque : la plus à l'intérieur
+				-- EN: at the edge, the better of the two is the one that saw more of the disc: the one farther
+				--     inside
 				if place.depth > marker.depth + 1 then weight = 0 end
 			else
 				-- deux places approchées changent un peu à chaque balayage : elles se moyennent
+				-- EN: two approximate positions shift a little on every sweep: they are averaged
 				weight = math.min(marker.count, AVERAGE)
 			end
 			if weight then
@@ -1559,7 +1804,7 @@ local function Finish()
 				marker.exact, marker.fitted, marker.rim, marker.worth, marker.depth = place.exact, place.fitted, place.rim, worth, place.depth
 				marker.reach = place.reach or marker.reach
 			elseif place.fitted then
-				marker.fitted = true -- il fait partie d'un groupe séparé : Known s'en servira
+				marker.fitted = true -- il fait partie d'un groupe séparé : Known s'en servira | EN: it is part of a separated group: Known will use it
 			end
 			if place.fitted or place.exact then marker.age = 0 end
 		end
@@ -1580,24 +1825,32 @@ local function Finish()
 	-- vu : un nœud ne se montre jamais deux fois. (Vu en jeu le 2026-10-13, avec l'alternance : « la
 	-- minimap affiche souvent la même ressource plusieurs fois ». Un nœud non retrouvé restait alors
 	-- deux balayages, et sans limite tant que les pistages s'alternaient à moins de trois secondes.)
+	-- EN: The known nodes this sweep did not find again. None stays next to what the sweep saw: a node is never
+	--     shown twice. (Seen in game on 2026-10-13, with alternation: « la minimap affiche souvent la même ressource
+	--     plusieurs fois » (the minimap often shows the same resource several times). A node not found again then
+	--     stayed for two sweeps, and indefinitely as long as trackings alternated less than three seconds apart.)
 	local other = turn.kind and anchored and (turn.kind == "herb" and "ore" or "herb") or nil
 	local now = GetTime()
 	local picked = pickedAt ~= nil and now - pickedAt <= PICK_TIME
-	local sighted = #found -- jusque-là, `found` ne tient que ce que ce balayage a vu
+	local sighted = #found -- jusque-là, `found` ne tient que ce que ce balayage a vu | EN: up to here, `found` holds only what this sweep saw
 	for _, old in ipairs(markers) do
 		if not claimed[old] then
 			local kind, keep = old.node.kind, false
-			local twin = false -- le balayage a-t-il placé un nœud du même nom tout près ? C'est alors lui
+			local twin = false -- le balayage a-t-il placé un nœud du même nom tout près ? C'est alors lui | EN: did the sweep place a node with the same name very close by? Then it is this one
 			for index = 1, sighted do
 				local near = found[index]
 				if near.name == old.name and (near.x - old.x) ^ 2 + (near.y - old.y) ^ 2 < (TWIN * Radius(old)) ^ 2 then twin = true end
 			end
 			if twin or old.map ~= map or not Wanted(kind) then
 				-- en double, resté sur une autre carte, ou plus voulu
+				-- EN: a duplicate, left on another map, or no longer wanted
 			elseif kind == other then
 				-- Alternance des pistages : le métier éteint n'a pas de points par où le trouver. Ses nœuds
 				-- restent donc comme ils étaient jusqu'à son tour. Sauf celui dont le nom a répondu près de
 				-- lui : ses points se voyaient encore, et le balayage en a fait un autre nœud que lui.
+				-- EN: Tracking alternation: the switched-off profession has no dots to find it by. So its nodes stay
+				--     as they were until its turn. Except one whose name responded near it: its dots were still
+				--     visible, and the sweep made a different node out of it.
 				keep = not Heard(scan.hits[old.name], old.x, old.y, Radius(old) + STEP)
 				old.held = keep or nil
 			elseif not old.far and not scan.heard[kind] then
@@ -1605,29 +1858,37 @@ local function Finish()
 				-- de pistage, ou l'infobulle n'a rien répondu. Ses nœuds ne s'en vont qu'au second balayage
 				-- de suite dans ce cas. Sauf celui que le joueur vient de récolter, et celui posé faute de
 				-- mieux au milieu d'un groupe.
+				-- EN: The sweep read no name of this profession: the game's dots lag after a tracking change, or the
+				--     tooltip returned nothing. In that case its nodes only go away on the second consecutive sweep.
+				--     Except the one the player has just gathered, and one placed for lack of anything better in the
+				--     middle of a group.
 				old.missed = (old.missed or 0) + 1
 				keep = old.missed < MISSES and old.worth > ROUGH and not (picked and old.yards ~= nil and old.yards <= PICK_REACH)
 				again = again or keep
 			end
 			-- (dans tout autre cas le balayage a lu des nœuds de ce métier, et pas celui-ci : il n'est plus là)
+			-- EN: (in any other case the sweep read nodes of this profession, but not this one: it is no longer
+			--     there)
 			if keep then found[#found + 1] = old else Fade(old) end
 		end
 	end
 
 	turn.scanned = true
 	-- À l'arrêt, rien n'entre par le bord de la minimap : sans rien de neuf, le balayage s'espace
+	-- EN: When standing still, nothing comes in from the minimap edge: with nothing new, sweeps are spaced out
 	local moved = map ~= spot.map or px ~= spot.x or py ~= spot.y
 	spot.map, spot.x, spot.y = map, px, py
 	if fresh or moved or again then slow = 1 else slow = math.min(slow * 2, MAX_SLOW) end
 	wait = WAIT * slow
 	last.points, last.seconds, last.jobs = probes - scan.probes, now - scan.started, scan.looked
 	markers, scan, refit = found, nil, false
-	seen.map = nil -- le suivi replace tout à la prochaine image
+	seen.map = nil -- le suivi replace tout à la prochaine image | EN: following repositions everything on the next frame
 	ns.ForgetSkills()
 	Draw()
 end
 
 -- Fait avancer le balayage d'une image. La souris fictive n'est allumée que pendant cet appel.
+-- EN: Advances the sweep by one frame. The fake mouse is only on during this call.
 local function Advance()
 	if scan.phase == "grid" then
 		for index = scan.next, math.min(scan.next + PER_FRAME - 1, #grid) do
@@ -1637,12 +1898,14 @@ local function Advance()
 		scan.next = scan.next + PER_FRAME
 		if scan.next > #grid then Sort() end
 	elseif scan.refines[1] then
-		do -- une place par image : elle demande autant d'essais qu'une image de grille
+		do -- une place par image : elle demande autant d'essais qu'une image de grille | EN: one position per frame: it needs as many tries as a grid frame
 			local place = table.remove(scan.refines)
 			Refine(place)
 			if place.merged or place.rim then
 				-- pas un disque seul, malgré sa taille, ou un disque que le bord de la minimap tronque :
 				-- ses nœuds seront cherchés par son contour, avec les gros groupes
+				-- EN: not a single disc despite its size, or a disc truncated by the minimap edge: its nodes will be
+				--     searched for by its outline, along with the large groups
 				for index, other in ipairs(scan.places) do
 					if other == place then
 						table.remove(scan.places, index)
@@ -1677,9 +1940,12 @@ end
 ---------------------------------------------------------------------------
 -- Pistages, et leur alternance
 ---------------------------------------------------------------------------
+-- EN: Trackings, and their alternation
 
 -- Les métiers dont le pistage est actif, et la place de chaque pistage de récolte dans la liste
 -- du jeu ; nil si le jeu ne le dit pas
+-- EN: The professions whose tracking is active, and the position of each gathering tracking in the game's list; nil
+--     if the game does not say
 local function Finders()
 	local count = SafeCall(C_Minimap.GetNumTrackingTypes)
 	if type(count) ~= "number" then return nil end
@@ -1706,6 +1972,7 @@ local function Casting(read)
 end
 
 -- Changer de pistage lance un sort : pas pendant que le joueur récolte, incante ou fouille
+-- EN: Changing tracking casts a spell: not while the player is gathering, casting or looting
 local function Busy()
 	return looting or Casting(UnitCastingInfo) or Casting(UnitChannelInfo)
 end
@@ -1713,6 +1980,9 @@ end
 -- Demande au jeu d'allumer le pistage de ce métier (`index`, dans la liste du jeu). Le jeu lance
 -- un sort : le pistage ne change qu'un instant plus tard (Blizzard_Minimap le dit de son propre
 -- menu), et pas du tout si le sort n'était pas prêt. Renvoie true si la demande est partie.
+-- EN: Asks the game to turn on this profession's tracking (`index`, in the game's list). The game casts a spell:
+--     tracking only changes a moment later (Blizzard_Minimap says so about its own menu), and not at all if the
+--     spell was not ready. Returns true if the request went out.
 local function Ask(kind, index)
 	turn.want, turn.at, turn.tries = kind, GetTime(), (turn.tries or 0) + 1
 	return (pcall(C_Minimap.SetTracking, index, true))
@@ -1721,11 +1991,14 @@ end
 -- Deux métiers de récolte : le jeu ne montre les points que d'un pistage à la fois. Lueur allume
 -- donc l'autre quand le joueur s'est éloigné d'assez du lieu de la dernière bascule, un balayage
 -- au moins ayant eu lieu entre-temps. Renvoie true s'il l'a demandé.
+-- EN: Two gathering professions: the game only shows the dots of one tracking at a time. So Lueur turns on the other
+--     one when the player has moved far enough from the place of the last switch, with at least one sweep having
+--     taken place in between. Returns true if it requested it.
 local function Switch(kind, index)
 	if not C_Minimap.SetTracking or Busy() then return false end
 	local map, x, y, wide, tall = MapPosition()
 	if not map then return false end
-	if map ~= turn.map then -- autre carte : la distance se compte d'ici
+	if map ~= turn.map then -- autre carte : la distance se compte d'ici | EN: another map: distance is counted from here
 		turn.map, turn.x, turn.y = map, x, y
 		return false
 	end
@@ -1740,8 +2013,11 @@ local function StartScan()
 	wait = WAIT * slow
 	-- ni en combat, ni la minimap cachée, ni la vraie souris dessus : la souris fictive changerait
 	-- ce que son infobulle montre
+	-- EN: not in combat, nor with the minimap hidden, nor with the real mouse over it: the fake mouse would change
+	--     what its tooltip shows
 	if InCombatLockdown() or not Minimap:IsVisible() or Minimap:IsMouseOver() then return end
 	-- le pistage vient de changer : les points du jeu ne sont pas encore ceux qu'il montre
+	-- EN: tracking has just changed: the game's dots are not yet the ones it shows
 	local since = turn.changed and GetTime() - turn.changed
 	if since and since < SWITCH_SETTLE then
 		wait = SWITCH_SETTLE - since
@@ -1753,10 +2029,12 @@ local function StartScan()
 		local alternating = ns.GetOption("nodeSwitch") and Wanted("herb") and Wanted("ore") and listed.herb and listed.ore
 		if turn.want then
 			if on[turn.want] or not alternating then
-				turn.want = nil -- la bascule a eu lieu, ou n'a plus lieu d'être
+				turn.want = nil -- la bascule a eu lieu, ou n'a plus lieu d'être | EN: the switch happened, or is no longer needed
 			elseif GetTime() - turn.at >= SWITCH_RETRY then
 				-- Le jeu n'a pas fait la bascule demandée : le sort n'était pas prêt. Elle est redemandée,
 				-- quelques fois ; après quoi ce sera pour la prochaine.
+				-- EN: The game did not make the requested switch: the spell was not ready. It is requested again, a
+				--     few times; after that, it waits for the next one.
 				if turn.tries >= SWITCH_TRIES then
 					turn.want = nil
 				elseif C_Minimap.SetTracking and not Busy() then
@@ -1777,10 +2055,12 @@ local function StartScan()
 		if not ((on.herb and Wanted("herb")) or (on.ore and Wanted("ore"))) then
 			if turn.want then
 				-- entre deux pistages, le temps que le sort de la bascule parte : rien ne s'efface
+				-- EN: between two trackings, while the switch spell goes off: nothing fades out
 				wait = SWITCH_POLL
 				return
 			end
 			-- rien à trouver sur la minimap
+			-- EN: nothing to find on the minimap
 			wait = IDLE_WAIT
 			Clear()
 			return
@@ -1816,9 +2096,10 @@ local function OnUpdate(_, elapsed)
 			pcall(Minimap.SetUsingSoftCursor, Minimap, false)
 			if not ok then
 				-- le jeu refuse : on n'insiste pas, et /lueur scan dit pourquoi
+				-- EN: the game refuses: we do not insist, and /lueur scan says why
 				broken, scan = tostring(problem), nil
 				ns.UpdateNodes()
-				if ns.Refresh then ns.Refresh() end -- Menu.lua : la page de la minimap se grise
+				if ns.Refresh then ns.Refresh() end -- Menu.lua : la page de la minimap se grise | EN: Menu.lua: the minimap page is grayed out
 				return
 			end
 		end
@@ -1832,9 +2113,12 @@ end
 ---------------------------------------------------------------------------
 -- Infobulle de la minimap
 ---------------------------------------------------------------------------
+-- EN: Minimap tooltip
 
 -- La souris sur un nœud que la compétence du joueur ne permet pas de récolter : sous son nom,
 -- ce qu'il demande, écrit comme le jeu l'écrit pour un objet inutilisable
+-- EN: Mouse over a node the player's skill is too low to gather: below its name, what it requires, written the way
+--     the game writes it for an unusable item
 local function OnTooltip(tooltip, data)
 	if not (ns.db and ns.db.enabled) or IsSecret(data) or type(data) ~= "table" then return end
 	local lines = data.lines
@@ -1867,9 +2151,12 @@ end
 ---------------------------------------------------------------------------
 -- Liens avec Lueur.lua et avec le jeu
 ---------------------------------------------------------------------------
+-- EN: Links with Lueur.lua and with the game
 
 -- Appelée par Lueur.lua quand un réglage des icônes change, et quand Lueur s'allume ou s'éteint :
 -- lance ou arrête le balayage, qui repart de zéro
+-- EN: Called by Lueur.lua when an icon setting changes, and when Lueur is turned on or off: starts or stops the
+--     sweep, which restarts from scratch
 function ns.UpdateNodes()
 	if not ns.db then return end
 	local on = ns.db.enabled and (Wanted("herb") or Wanted("ore")) and not Failure()
@@ -1882,6 +2169,7 @@ function ns.UpdateNodes()
 		end
 		HookTooltip()
 		-- sans alternance, plus rien ne justifie de garder les nœuds d'un pistage éteint
+		-- EN: without alternation, there is no longer any reason to keep the nodes of a switched-off tracking
 		if not ns.GetOption("nodeSwitch") then
 			for index = #markers, 1, -1 do
 				if markers[index].held then Free(table.remove(markers, index)) end
@@ -1901,12 +2189,14 @@ function handlers.PLAYER_LOGIN()
 end
 
 -- Un écran de chargement : le joueur est peut-être ailleurs
+-- EN: A loading screen: the player may be somewhere else
 function handlers.PLAYER_ENTERING_WORLD()
 	scan, wait, slow = nil, 0, 1
 	Clear()
 end
 
 -- Le joueur se met en route, zoome la minimap ou change de pistage : le prochain balayage ne tarde pas
+-- EN: The player starts moving, zooms the minimap or changes tracking: the next sweep comes soon
 local function Hurry(delay)
 	slow = 1
 	if wait > delay then wait = delay end
@@ -1926,6 +2216,8 @@ end
 -- Le butin se referme. Si c'était celui d'un nœud, son point du jeu va disparaître : on balaie
 -- sans attendre. Et l'icône gardée d'un pistage éteint, que nul balayage ne verra partir avant
 -- son tour, s'en va tout de suite.
+-- EN: Looting closes. If it was a node's loot, its game dot is about to disappear: sweep right away. And the kept
+--     icon of a switched-off tracking, which no sweep would see leave before its turn, goes away at once.
 function handlers.LOOT_CLOSED()
 	looting, refit, pickedAt = false, true, GetTime()
 	Hurry(0)
@@ -1940,6 +2232,7 @@ function handlers.LOOT_CLOSED()
 end
 
 -- La compétence a changé : les couleurs aussi, peut-être
+-- EN: The skill has changed: the colors may have too
 function handlers.SKILL_LINES_CHANGED()
 	ns.ForgetSkills()
 	Draw()
@@ -1955,6 +2248,7 @@ end
 ---------------------------------------------------------------------------
 -- Diagnostic (/lueur scan)
 ---------------------------------------------------------------------------
+-- EN: Diagnostics (/lueur scan)
 
 local function SkillText(kind)
 	local skill = ns.GatherSkill(kind)
@@ -1964,6 +2258,8 @@ end
 
 -- Les champs d'une table du jeu, sauf ceux de `skip` : « nom = valeur », triés. Pour voir ce que le
 -- jeu dit d'un point de la minimap en plus de son nom.
+-- EN: The fields of a game table, except those in `skip`: « nom = valeur » (name = value), sorted. To see what the
+--     game says about a minimap dot besides its name.
 local function Fields(value, skip)
 	local parts = {}
 	for key, item in pairs(value) do
@@ -1978,12 +2274,16 @@ local function Fields(value, skip)
 end
 
 local TEXT_FIELDS = { lines = true, leftText = true, leftColor = true, rightColor = true, args = true }
-local SCAN_LINES = 12     -- icônes que /lueur scan détaille
+local SCAN_LINES = 12     -- icônes que /lueur scan détaille | EN: icons that /lueur scan details
 
 -- Ce que l'infobulle de la minimap dit sous la vraie souris, tel que le jeu l'écrit ; et tout ce que
 -- ses données portent d'autre que ce texte. Le jeu ne documente pas ces données : s'il y glissait
 -- un identifiant du point, c'est là qu'il se verrait.
 -- Le troisième résultat est le premier nom lu, et le quatrième, où est la souris : en pixels d'écran.
+-- EN: What the minimap tooltip says under the real mouse, as the game writes it; and everything else its data
+--     carries besides this text. The game does not document this data: if it slipped in an identifier for the dot,
+--     this is where it would show up. The third result is the first name read, and the fourth, where the mouse is:
+--     in screen pixels.
 local function UnderPointer()
 	if InCombatLockdown() or not GetCursorPosition then return nil end
 	local texts, others, first, cursor = {}, {}, nil, nil
@@ -2022,6 +2322,11 @@ end
 -- disque : sa largeur, sa hauteur, son milieu, ses rangées et les points où le nom est écrit deux
 -- fois le disent. (Ajouté le 2026-10-15 : des nœuds montrés en deux icônes, toujours à dix unités
 -- l'une de l'autre sur une même rangée, que le faux client ne fait qu'avec une zone allongée.)
+-- EN: The zone in which the game names the dot under the mouse, tried every ZONE_STEP units around it: once column
+--     by column, like the sweep, then row by row. What the game answers should not depend on the order of the tries,
+--     and a game dot should respond within a disc: its width, its height, its middle, its rows and the points where
+--     the name is written twice will tell. (Added on 2026-10-15: nodes shown as two icons, always ten units apart on
+--     the same row, which the fake client only produces with an elongated zone.)
 local ZONE_STEP, ZONE_REACH = 2, 34
 
 local function Zone(name, cursor)
@@ -2029,7 +2334,7 @@ local function Zone(name, cursor)
 	if not (left and bottom and scale and width) then return end
 	local px, py = cursor[1] / scale - left, cursor[2] / scale - bottom
 	local size = math.floor(ZONE_REACH / ZONE_STEP)
-	local rows -- de la première passe : rangée -> plus petit et plus grand écart en largeur qui a répondu
+	local rows -- de la première passe : rangée -> plus petit et plus grand écart en largeur qui a répondu | EN: from the first pass: row -> smallest and largest horizontal offset that responded
 	for pass = 1, 2 do
 		local hits, job = {}, { many = {}, arrows = {} }
 		pcall(function()
@@ -2063,6 +2368,7 @@ local function Zone(name, cursor)
 		rows = rows or spans
 	end
 	-- les rangées, du haut vers le bas, une sur deux
+	-- EN: the rows, from top to bottom, every other one
 	local list, ys = {}, {}
 	for y in pairs(rows) do ys[#ys + 1] = y end
 	table.sort(ys, function(a, b) return a > b end)
@@ -2075,6 +2381,8 @@ end
 
 -- Les « vignettes » du jeu : des objets de la minimap qui ont, eux, un identifiant et une place sur
 -- la carte. Rien ne dit que les plantes et les filons en soient ; leur nombre et leurs noms le diront.
+-- EN: The game's « vignettes » (vignettes): minimap objects that do have an identifier and a position on the map.
+--     Nothing says that herbs and ore veins are among them; their number and names will tell.
 local function Vignettes()
 	if not (C_VignetteInfo and C_VignetteInfo.GetVignettes and C_VignetteInfo.GetVignetteInfo) then return "?" end
 	local guids = SafeCall(C_VignetteInfo.GetVignettes)
@@ -2110,6 +2418,7 @@ function ns.ScanReport()
 			L.NAME_ORE, reaches.ore.value, reaches.ore.measured and "" or " ?")))
 	print("  " .. L.SCAN_TWICE:format(Doubled() and L.YES or L.STATUS_NOT_YET))
 	-- comment chaque nœud connu a été placé, et ce qu'a coûté le dernier balayage
+	-- EN: how each known node was placed, and what the last sweep cost
 	local exact, fitted, rough, held, missed = 0, 0, 0, 0, 0
 	for _, marker in ipairs(markers) do
 		if marker.held then held = held + 1
@@ -2121,6 +2430,8 @@ function ns.ScanReport()
 	print("  " .. L.SCAN_PLACED:format(exact, fitted, rough, held, missed, last.points or 0, last.seconds or 0, last.jobs or 0))
 	-- puis les icônes une à une, les plus proches du joueur d'abord : deux icônes pour un seul nœud
 	-- se voient à leurs places, et le rayon lu pour chacune dit si les points du jeu ont tous le même
+	-- EN: then the icons one by one, nearest to the player first: two icons for a single node show up at their
+	--     positions, and the radius read for each one tells whether the game's dots all have the same one
 	local half, near = Minimap:GetWidth() / 2, {}
 	for _, marker in ipairs(markers) do near[#near + 1] = marker end
 	table.sort(near, function(a, b) return (a.x - half) ^ 2 + (a.y - half) ^ 2 < (b.x - half) ^ 2 + (b.y - half) ^ 2 end)

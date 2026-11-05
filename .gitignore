@@ -1,2 +1,5 @@
 .DS_Store
 *.zip
+
+# Downloadable addon zips kept in the repo
+!*/Lueur-*.zip

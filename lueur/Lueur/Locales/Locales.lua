@@ -3,6 +3,10 @@
 -- langue. ns.L les sert dans la langue choisie (celle du client tant que rien n'est choisi),
 -- à défaut en anglais ; une clé qui manquerait partout s'affiche telle quelle plutôt que de
 -- lever une erreur. Les textes sont relus à chaque usage : la langue se change en cours de jeu.
+-- EN: Lueur: language selection. Each other file in this folder stores its texts in ns.LOCALES, under its language
+--     code. ns.L serves them in the chosen language (the client's as long as nothing is chosen), falling back to
+--     English; a key missing everywhere is displayed as is rather than raising an error. The texts are re-read on
+--     every use: the language can be changed during play.
 
 local _, ns = ...
 
@@ -10,9 +14,10 @@ local LOCALES = {}
 ns.LOCALES = LOCALES
 
 -- Clients qui se servent des textes d'une autre langue
+-- EN: Clients that use the texts of another language
 local SAME_AS = { esMX = "esES", enGB = "enUS" }
 
-local chosen  -- textes de la langue choisie ; nil : ceux de la langue du client
+local chosen  -- textes de la langue choisie ; nil : ceux de la langue du client | EN: texts of the chosen language; nil: those of the client's language
 
 local function ClientLocale()
 	local code = GetLocale()
@@ -20,6 +25,7 @@ local function ClientLocale()
 end
 
 -- Textes de la langue du client, ou de l'anglais s'il n'a pas de fichier ici
+-- EN: Texts in the client's language, or English if it has no file here
 local function ClientTexts()
 	return LOCALES[ClientLocale()] or LOCALES.enUS
 end
@@ -32,6 +38,7 @@ ns.L = setmetatable({}, { __index = function(_, key)
 end })
 
 -- Sert désormais les textes de cette langue ; "auto", ou un code inconnu : celle du client
+-- EN: From now on serves the texts of this language; "auto", or an unknown code: the client's
 function ns.UseLanguage(code)
 	chosen = LOCALES[code]
 end
@@ -39,6 +46,9 @@ end
 -- Adjectifs trop répandus pour rapprocher à eux seuls un objet d'un objectif de quête. Ils sont
 -- rangés par langue de client, et non avec les textes : noms d'objets et objectifs viennent du
 -- client, dans sa langue, quelle que soit la langue affichée et même si elle n'a pas de fichier ici.
+-- EN: Adjectives too common to match an item to a quest objective on their own. They are grouped by client language,
+--     not with the texts: item names and objectives come from the client, in its language, whatever the displayed
+--     language and even if it has no file here.
 local COMMON_WORDS = {
 	enUS = "small little large great giant ancient",
 	frFR = "petit petite grand grande vieux vieille ancien ancienne",
@@ -58,6 +68,11 @@ end
 -- commence ou finit par l'un de ceux-ci (« Coffre endommagé », « Schatztruhe »). Par langue de
 -- client, pour la même raison que les adjectifs. Le français est recoupé avec le cache du client
 -- (« Coffre endommagé », objet 106318) ; les autres langues ne le sont avec rien.
+-- EN: What a chest is called. The game gives it the cursor of any object (a cog, as for a lever): it is its name
+--     that classes it among chests, when one of its words starts or ends with one of these (« Coffre endommagé »
+--     (Damaged Chest), « Schatztruhe » (Treasure Chest)). By client language, for the same reason as the adjectives.
+--     The French is cross-checked against the client cache (« Coffre endommagé », object 106318); the other
+--     languages are not checked against anything.
 local CHEST_WORDS = {
 	enUS = "chest footlocker strongbox lockbox coffer",
 	frFR = "coffre cantine malle",
@@ -79,6 +94,9 @@ end
 -- du client : le russe a les siennes ; le coréen et le chinois n'en ont pas qui sachent écrire
 -- leurs noms, ils gardent la police du jeu. Fichiers lus dans
 -- Blizzard_Fonts_Shared\Shared\GameFonts.xml (build 70245).
+-- EN: Game fonts that item names can use, in addition to its own ("game"), by client alphabet: Russian has its own;
+--     Korean and Chinese have none that can write their names, they keep the game font. Files read from
+--     Blizzard_Fonts_Shared\Shared\GameFonts.xml (build 70245).
 local FONT_ORDER = { "game", "arial", "morpheus", "skurri" }
 local FONT_NAMES = { arial = "Arial Narrow", morpheus = "Morpheus", skurri = "Skurri" }
 local FONT_FILES = {
@@ -89,12 +107,14 @@ local FONT_FILES = {
 local ALPHABETS = { ruRU = "russian", koKR = false, zhCN = false, zhTW = false }
 
 -- Une police que Lueur connaît, que ce client l'ait ou non
+-- EN: A font Lueur knows, whether or not this client has it
 function ns.IsFont(key)
 	return key == "game" or FONT_FILES[key] ~= nil
 end
 
 -- Fichier d'une police pour l'alphabet du client ; nil pour celle du jeu, ou pour une police
 -- qu'il n'a pas
+-- EN: File of a font for the client's alphabet; nil for the game's, or for a font it does not have
 function ns.FontFile(key)
 	local alphabet = ALPHABETS[GetLocale()]
 	if alphabet == nil then alphabet = "roman" end
@@ -102,6 +122,7 @@ function ns.FontFile(key)
 end
 
 -- Polices que ce client propose, dans l'ordre du menu
+-- EN: Fonts this client offers, in menu order
 function ns.FontChoices()
 	local list = {}
 	for _, key in ipairs(FONT_ORDER) do
@@ -111,6 +132,7 @@ function ns.FontChoices()
 end
 
 -- Nom d'une police ; nil pour celle du jeu, qui se nomme dans la langue affichée (L.FONT_GAME)
+-- EN: Name of a font; nil for the game's, which is named in the displayed language (L.FONT_GAME)
 function ns.FontName(key)
 	return FONT_NAMES[key]
 end

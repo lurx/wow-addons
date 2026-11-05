@@ -9,6 +9,14 @@
 -- chacun avec son icône, sa couleur et sa case, et à droite l'apparence de ceux que l'on y
 -- choisit. La deuxième règle les icônes des filons et des plantes sur la minimap (NodeScan.lua).
 -- La troisième réunit le reste : détection, réglages généraux, masquage, silhouette.
+-- EN: Lueur: settings menu and minimap button. The menu only displays the settings and requests their changes:
+--     everything goes through the functions that Lueur.lua exposes in the addon table, as with the /lueur commands.
+--     A control does not keep its text but the name of that text: "SIZE" for its label, and automatically "SIZE_TIP"
+--     for its tooltip. The window can thus change language without being rebuilt. The window looks like the
+--     professions window (Skin.lua) and has three pages, chosen by the tabs on its right edge. The first lists on
+--     the left the objects Lueur highlights, each with its icon, its color and its checkbox, and on the right the
+--     appearance of the ones selected there. The second sets the icons for ore veins and herbs on the minimap
+--     (NodeScan.lua). The third gathers the rest: detection, general settings, hiding, silhouette.
 
 local ADDON_NAME, ns = ...
 local L = ns.L
@@ -16,6 +24,8 @@ local Skin = ns.Skin
 if not Skin then
 	-- Skin.lua est arrivé avec une mise à jour, et le jeu ne charge un nouveau fichier qu'à son
 	-- lancement : d'ici là pas de fenêtre, et /lueur dit pourquoi
+	-- EN: Skin.lua arrived with an update, and the game only loads a new file at launch: until then there is no
+	--     window, and /lueur says why
 	function ns.ToggleMenu() ns.Print(L.MSG_RESTART) end
 	Lueur_OnAddonCompartmentClick = ns.ToggleMenu
 	return
@@ -25,56 +35,62 @@ local MEDIA = "Interface\\AddOns\\" .. ADDON_NAME .. "\\Media\\"
 local ICONS = "Interface\\Icons\\"
 local FALLBACK_ICON = "Interface\\Cooldown\\star4"
 
-local WIDTH, HEIGHT = 728, 556 -- (port retail : +60, les cases de la lueur une par ligne)
-local EDGE = 12               -- marge entre le cadre de la fenêtre et ses panneaux
-local TOP, FOOT = 62, 42      -- ce que la fenêtre garde au-dessus des panneaux (son portrait) et dessous (ses boutons)
-local GAP = 6                 -- espace entre deux panneaux
-local PAD = 16                -- marge intérieure d'un panneau
-local LIST = 236              -- largeur du panneau des objets
-local ENTRY = 48              -- hauteur d'une ligne de ce panneau
-local SLOT = 40               -- côté d'un bouton d'icône : celui des boutons de sort du jeu, dont il porte le liseré
-local ROW = 30                -- hauteur d'une ligne de case à cocher (la case en fait 29)
-local RADIO_ROW = 22          -- hauteur d'une ligne de boutons radio
-local PER_ROW = 5             -- effets par ligne
-local VALUE = 46              -- place de la valeur d'un curseur, à sa droite
-local CONFIRM_TIME = 4        -- secondes laissées pour confirmer la remise à zéro
-local BUTTON_RADIUS = 5       -- écart entre le bord de la minimap et le centre du bouton, comme les autres addons
+local WIDTH, HEIGHT = 728, 556 -- (port retail : +60, les cases de la lueur une par ligne) | EN: (retail port: +60, the glow checkboxes one per line)
+local EDGE = 12               -- marge entre le cadre de la fenêtre et ses panneaux | EN: margin between the window frame and its panels
+local TOP, FOOT = 62, 42      -- ce que la fenêtre garde au-dessus des panneaux (son portrait) et dessous (ses boutons) | EN: what the window keeps above the panels (its portrait) and below (its buttons)
+local GAP = 6                 -- espace entre deux panneaux | EN: space between two panels
+local PAD = 16                -- marge intérieure d'un panneau | EN: inner padding of a panel
+local LIST = 236              -- largeur du panneau des objets | EN: width of the objects panel
+local ENTRY = 48              -- hauteur d'une ligne de ce panneau | EN: height of a row in this panel
+local SLOT = 40               -- côté d'un bouton d'icône : celui des boutons de sort du jeu, dont il porte le liseré | EN: side of an icon button: that of the game's spell buttons, whose border it carries
+local ROW = 30                -- hauteur d'une ligne de case à cocher (la case en fait 29) | EN: height of a checkbox row (the checkbox itself is 29)
+local RADIO_ROW = 22          -- hauteur d'une ligne de boutons radio | EN: height of a row of radio buttons
+local PER_ROW = 5             -- effets par ligne | EN: effects per row
+local VALUE = 46              -- place de la valeur d'un curseur, à sa droite | EN: space for a slider's value, to its right
+local CONFIRM_TIME = 4        -- secondes laissées pour confirmer la remise à zéro | EN: seconds allowed to confirm the reset
+local BUTTON_RADIUS = 5       -- écart entre le bord de la minimap et le centre du bouton, comme les autres addons | EN: distance between the minimap edge and the button's center, like other addons
 
 -- Icône de chaque catégorie dans la liste des objets : des icônes de métier et d'objet du jeu
+-- EN: Icon of each category in the objects list: profession and item icons from the game
 local CATEGORY_ICONS = {
 	ore = "Trade_Mining", herb = "Trade_Herbalism", lumber = "INV_Axe_01", quest = "INV_Misc_Note_01", chest = "INV_Box_01",
 	bobber = "Trade_Fishing", other = "INV_Misc_Gear_01",
 }
 local SETTINGS_ICON = "Trade_Engineering"
 local NODES_ICON = "INV_Misc_Map_01"
-local NODES_HEIGHT = 216      -- hauteur des deux panneaux de la page de la minimap
+local NODES_HEIGHT = 216      -- hauteur des deux panneaux de la page de la minimap | EN: height of the two panels on the minimap page
 
 -- Titre de chaque page sous la barre de titre ; celle des objets compose le sien (LookTitle)
+-- EN: Title of each page under the title bar; the objects page composes its own (LookTitle)
 local PAGE_TITLES = { nodes = "NODES_PAGE", settings = "SETTINGS" }
 
 -- Choix d'un réglage : { valeur, nom du texte } ; ou { valeur, nil, libellé } quand le libellé
 -- ne se traduit pas
+-- EN: Choice for a setting: { value, text name }; or { value, nil, label } when the label is not translated
 local ARC_CHOICES = { { 0, "ARC_0" }, { 1, "ARC_1" }, { 2, "ARC_2" } }
 
-local menu                    -- fenêtre des réglages, créée à sa première ouverture
+local menu                    -- fenêtre des réglages, créée à sa première ouverture | EN: settings window, created when first opened
 local minimapButton
-local pages = {}              -- nom d'une page ("look", "nodes", "settings") -> son cadre
-local refreshers = {}         -- une fonction par contrôle, qui le remet en accord avec les réglages
-local captions = {}           -- une fonction par texte fixe de la fenêtre, qui le pose dans la langue courante
-local refreshing = false      -- pendant ce temps, un curseur qui bouge ne doit rien régler
-local previewStarted = false  -- la fenêtre d'aperçu a été ouverte depuis le menu
-local blockClick = 0          -- frames pendant lesquelles les clics sur le bouton de touche sont ignorés
-local keybindButton           -- référence au bouton de key binding
-local openPage = "look"       -- page montrée : "look" (les objets et leur apparence), "nodes" (la minimap) ou "settings"
-local effectScope = "all"     -- catégorie dont la page règle l'effet et l'apparence, ou "all" pour tous les objets
+local pages = {}              -- nom d'une page ("look", "nodes", "settings") -> son cadre | EN: name of a page ("look", "nodes", "settings") -> its frame
+local refreshers = {}         -- une fonction par contrôle, qui le remet en accord avec les réglages | EN: one function per control, which brings it back in line with the settings
+local captions = {}           -- une fonction par texte fixe de la fenêtre, qui le pose dans la langue courante | EN: one function per fixed text of the window, which sets it in the current language
+local refreshing = false      -- pendant ce temps, un curseur qui bouge ne doit rien régler | EN: meanwhile, a moving slider must not change anything
+local previewStarted = false  -- la fenêtre d'aperçu a été ouverte depuis le menu | EN: the preview window was opened from the menu
+local blockClick = 0          -- frames pendant lesquelles les clics sur le bouton de touche sont ignorés | EN: frames during which clicks on the key button are ignored
+local keybindButton           -- référence au bouton de key binding | EN: reference to the key binding button
+local openPage = "look"       -- page montrée : "look" (les objets et leur apparence), "nodes" (la minimap) ou "settings" | EN: page shown: "look" (the objects and their appearance), "nodes" (the minimap) or "settings"
+local effectScope = "all"     -- catégorie dont la page règle l'effet et l'apparence, ou "all" pour tous les objets | EN: category whose effect and appearance the page sets, or "all" for all objects
 
 -- La catégorie que le menu personnalise ; nil : tous les objets
+-- EN: The category the menu customizes; nil: all objects
 local function ScopeCategory()
 	return effectScope ~= "all" and effectScope or nil
 end
 
 -- Couleur des dessins d'effet : celle de la catégorie que la page règle, l'or des titres du
 -- jeu quand elle règle tous les objets
+-- EN: Color of the effect drawings: that of the category the page sets, the gold of the game's titles when it sets
+--     all objects
 local function LookColor()
 	local category = ScopeCategory()
 	if category then return ns.GetColor(category) end
@@ -84,9 +100,12 @@ end
 ---------------------------------------------------------------------------
 -- Contrôles
 ---------------------------------------------------------------------------
+-- EN: Controls
 
 -- Donne à une région le texte de ce nom, maintenant et à chaque changement de langue.
 -- `after` est appelée ensuite, pour ce qui dépend de la place que prend le texte.
+-- EN: Gives a region the text of this name, now and on every language change. `after` is called afterwards, for
+--     whatever depends on the space the text takes up.
 local function Caption(region, name, after)
 	local function Apply()
 		region:SetText(L[name])
@@ -98,6 +117,8 @@ end
 
 -- Infobulle d'un contrôle : le texte de ce nom et, dessous, son explication, relus à chaque
 -- survol. Un titre donné tel quel, parce qu'il ne se traduit pas, vient sans explication.
+-- EN: Tooltip of a control: the text of this name and, below it, its explanation, reread on every hover. A title
+--     given as is, because it is not translated, comes without an explanation.
 local function SetTooltip(frame, name, title)
 	frame:HookScript("OnEnter", function(self)
 		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -115,6 +136,7 @@ local function Dim(fontString, available, r, g, b)
 end
 
 -- Lecture et écriture d'un réglage de Lueur, pour un contrôle
+-- EN: Reading and writing a Lueur setting, for a control
 local function Getter(key)
 	return function() return ns.GetOption(key) end
 end
@@ -125,6 +147,8 @@ end
 
 -- Les mêmes pour un réglage de personnalisation : il se lit et se change pour les objets que
 -- désigne le menu, tous ou une catégorie
+-- EN: The same for a customization setting: it is read and changed for the objects the menu designates, all or one
+--     category
 local function ScopedGetter(key)
 	return function() return ns.GetOption(key, ScopeCategory()) end
 end
@@ -135,6 +159,8 @@ end
 
 -- Pose un panneau sur une page. Renvoie la colonne où se rangent ses contrôles : chacun se
 -- pose en `y`, puis l'abaisse. `name` nomme le titre du panneau, s'il en a un.
+-- EN: Places a panel on a page. Returns the column where its controls are laid out: each is placed at `y`, then
+--     lowers it. `name` names the panel's title, if it has one.
 local function NewCard(page, x, y, width, height, name)
 	local card = Skin.Card(page, width, height)
 	card:SetPoint("TOPLEFT", x, y)
@@ -151,6 +177,9 @@ end
 -- Case « remplacer Tous » d'un réglage de personnalisation, dans la marge à gauche de son
 -- contrôle (`anchor`), montrée pour une catégorie seulement. Cochée, la catégorie garde sa propre
 -- valeur ; décochée, elle suit tous les objets. (Ajout du port retail.)
+-- EN: « remplacer Tous » ("Override All") checkbox of a customization setting, in the margin to the left of its
+--     control (`anchor`), shown for a category only. Checked, the category keeps its own value; unchecked, it
+--     follows all objects. (Added by the retail port.)
 local function AddOverride(parent, anchor, key)
 	local box = CreateFrame("CheckButton", nil, parent, "MinimalCheckboxTemplate")
 	box:SetSize(20, 20)
@@ -172,6 +201,8 @@ end
 
 -- Case à cocher, suivie de son nom, qui se clique aussi ; `key` : un réglage de personnalisation,
 -- qui reçoit sa case « remplacer Tous »
+-- EN: Checkbox, followed by its name, which is also clickable; `key`: a customization setting, which gets its «
+--     remplacer Tous » ("Override All") checkbox
 local function AddCheckbox(column, name, get, set, key)
 	local check = CreateFrame("CheckButton", nil, column.parent, "MinimalCheckboxTemplate")
 	check:SetPoint("TOPLEFT", column.x - 3, column.y + 1)
@@ -200,6 +231,7 @@ local function AddCheckbox(column, name, get, set, key)
 end
 
 -- Case à cocher d'un réglage oui/non de Lueur ; `scoped` : un réglage de personnalisation
+-- EN: Checkbox for a Lueur yes/no setting; `scoped`: a customization setting
 local function AddOption(column, name, key, scoped)
 	return AddCheckbox(column, name, (scoped and ScopedGetter or Getter)(key), (scoped and ScopedSetter or Setter)(key),
 		scoped and key or nil)
@@ -210,6 +242,10 @@ end
 -- et la valeur, et ces lignes se touchent dans un panneau `tight`. `pattern` nomme le format
 -- de la valeur, qui dépend de la langue ; sans lui, le nombre seul. `scoped` : un réglage de
 -- personnalisation.
+-- EN: Slider for a numeric setting: its name and value on one line, the slider below; with `inline`, the width given
+--     to the slider, everything fits on one line, the slider between the name and the value, and these lines touch
+--     in a `tight` panel. `pattern` names the value format, which depends on the language; without it, just the
+--     number. `scoped`: a customization setting.
 local function AddSlider(column, name, key, pattern, scoped, inline)
 	local limits = ns.LIMITS[key]
 	local get, set = (scoped and ScopedGetter or Getter)(key), (scoped and ScopedSetter or Setter)(key)
@@ -248,7 +284,7 @@ local function AddSlider(column, name, key, pattern, scoped, inline)
 	row.slider = slider
 	local wasAvailable
 	function row:SetAvailable(available)
-		if available == wasAvailable then return end -- ne pas toucher à un curseur en cours de glissement
+		if available == wasAvailable then return end -- ne pas toucher à un curseur en cours de glissement | EN: do not touch a slider that is being dragged
 		wasAvailable = available
 		slider:SetEnabled(available)
 		Dim(label, available, 1, 1, 1)
@@ -263,6 +299,8 @@ end
 
 -- Police du nom des objets, une à la fois, entre les flèches d'un curseur du jeu dont la barre
 -- est cachée : son nom s'y écrit dans la police même. Sur la ligne, comme un curseur `inline`.
+-- EN: Font for object names, one at a time, between the arrows of a game slider whose bar is hidden: its name is
+--     written there in that very font. On the line, like an `inline` slider.
 local function AddFont(column, name, width)
 	local get, set = ScopedGetter("textFont"), ScopedSetter("textFont")
 	local row = CreateFrame("Frame", nil, column.parent)
@@ -289,6 +327,7 @@ local function AddFont(column, name, width)
 		if not (ok and done ~= false) and font then text:SetFont(font, height, flags) end
 	end
 	-- un client qui n'a que la police du jeu garde deux crans, et la ligne grisée
+	-- EN: a client that only has the game font keeps two steps, and the row grayed out
 	stepper:Init(1, 1, math.max(#list, 2), math.max(#list, 2) - 1)
 	stepper:RegisterCallback(MinimalSliderWithSteppersMixin.Event.OnValueChanged, function(_, number)
 		local key = list[math.floor(number + 0.5)]
@@ -319,6 +358,8 @@ end
 
 -- Choix entre quelques valeurs, par des boutons radio rangés `perRow` par ligne sous le nom
 -- du choix ; `get` donne la valeur en place, `set` reçoit celle qui est choisie
+-- EN: Choice between a few values, through radio buttons laid out `perRow` per row under the choice's name; `get`
+--     gives the current value, `set` receives the one chosen
 local function AddChoice(column, name, choices, get, set, perRow)
 	local top = 22
 	local height = top + math.ceil(#choices / perRow) * RADIO_ROW
@@ -337,7 +378,7 @@ local function AddChoice(column, name, choices, get, set, perRow)
 		radio:SetPoint("TOPLEFT", (index - 1) % perRow * column.width / perRow + 2, -top - math.floor((index - 1) / perRow) * RADIO_ROW)
 		radio.text:SetFontObject(GameFontHighlight)
 		local function Fit()
-			radio:SetHitRectInsets(0, -(radio.text:GetStringWidth() + 5), 0, 0) -- le texte se clique aussi
+			radio:SetHitRectInsets(0, -(radio.text:GetStringWidth() + 5), 0, 0) -- le texte se clique aussi | EN: the text is also clickable
 		end
 		if choice[2] then
 			Caption(radio.text, choice[2], Fit)
@@ -349,7 +390,7 @@ local function AddChoice(column, name, choices, get, set, perRow)
 		end
 		radio:SetScript("OnClick", function()
 			PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
-			set(choice[1]) -- le rafraîchissement qui suit coche le bon bouton
+			set(choice[1]) -- le rafraîchissement qui suit coche le bon bouton | EN: the refresh that follows checks the right button
 		end)
 		radios[index] = radio
 	end
@@ -362,6 +403,8 @@ end
 
 -- Choix de l'effet : un bouton d'icône par effet, qui en porte le dessin (`icon`, dans
 -- Effects.lua) dans la couleur des objets que la page règle, et son nom dessous
+-- EN: Effect choice: one icon button per effect, carrying its drawing (`icon`, in Effects.lua) in the color of the
+--     objects the page sets, and its name below
 local function AddEffects(column)
 	local cell = column.width / PER_ROW
 	local lines = math.ceil(#ns.EFFECT_ORDER / PER_ROW)
@@ -383,7 +426,7 @@ local function AddEffects(column)
 		local button = Skin.IconButton(row, SLOT)
 		button:SetPoint("TOP", row, "TOPLEFT", ((index - 1) % PER_ROW + 0.5) * cell, -top - math.floor((index - 1) / PER_ROW) * pitch)
 		button.effect = key
-		local side = SLOT - 8 -- le dessin tient dans l'emplacement, à l'écart de son liseré
+		local side = SLOT - 8 -- le dessin tient dans l'emplacement, à l'écart de son liseré | EN: the drawing fits within the slot, clear of its border
 		for depth, layer in ipairs(ns.EFFECTS[key].icon or {}) do
 			local texture = button:CreateTexture(nil, "ARTWORK", nil, depth)
 			if texture:SetTexture(MEDIA .. layer[1] .. ".tga") == false then texture:Hide() end
@@ -397,7 +440,7 @@ local function AddEffects(column)
 		Caption(title, name)
 		button:SetScript("OnClick", function()
 			PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
-			set(key) -- le rafraîchissement qui suit coche le bon bouton
+			set(key) -- le rafraîchissement qui suit coche le bon bouton | EN: the refresh that follows checks the right button
 		end)
 		SetTooltip(button, name)
 		buttons[key] = button
@@ -430,12 +473,15 @@ end
 
 
 -- Change le texte d'un bouton, sans y toucher quand il est déjà le bon
+-- EN: Changes a button's text, without touching it when it is already correct
 local function SetLabel(button, text)
 	if button:GetText() ~= text then button:SetText(text) end
 end
 
 -- Ouvre le sélecteur de couleur du jeu sur la couleur d'une catégorie : elle suit le sélecteur
 -- en direct, et lui revient s'il est annulé
+-- EN: Opens the game's color picker on a category's color: the color follows the picker live, and reverts if it is
+--     cancelled
 local function PickColor(key)
 	if not (ColorPickerFrame and ColorPickerFrame.SetupColorPickerAndShow) then
 		ns.Print(L.MSG_NO_PICKER)
@@ -451,6 +497,8 @@ end
 
 -- Pastille de la couleur d'une catégorie. Un clic gauche ouvre le sélecteur de couleur, un clic
 -- droit rend la couleur d'origine. `swatch.fill` est son aplat.
+-- EN: Swatch of a category's color. A left click opens the color picker, a right click restores the original color.
+--     `swatch.fill` is its solid fill.
 local function AddSwatch(parent, key)
 	local swatch = CreateFrame("Button", nil, parent)
 	swatch:SetSize(16, 16)
@@ -481,6 +529,8 @@ end
 
 -- Objets écartés par leur nom : leur nombre à gauche et, à son survol, leurs noms ; à droite, le
 -- bouton qui écarte l'objet visé en ce moment, ou cesse de l'écarter
+-- EN: Objects excluded by name: their count on the left and, on hover, their names; on the right, the button that
+--     excludes the currently targeted object, or stops excluding it
 local function AddIgnore(column)
 	local row = CreateFrame("Frame", nil, column.parent)
 	row:SetSize(column.width, 26)
@@ -504,6 +554,7 @@ local function AddIgnore(column)
 end
 
 -- Touches qui ne font pas un raccourci à elles seules
+-- EN: Keys that do not make a shortcut on their own
 local MODIFIER_KEYS = {
 	LALT = true, RALT = true, ALT = true, LCTRL = true, RCTRL = true, CTRL = true, LSHIFT = true, RSHIFT = true, SHIFT = true,
 	LMETA = true, RMETA = true, META = true, UNKNOWN = true,
@@ -511,6 +562,8 @@ local MODIFIER_KEYS = {
 
 -- Renvoie la touche précédée des touches de modification tenues ("SHIFT-E"), dans l'ordre
 -- qu'attend le jeu ; nil pour une touche de modification seule
+-- EN: Returns the key preceded by the modifier keys being held ("SHIFT-E"), in the order the game expects; nil for a
+--     modifier key alone
 local function KeyChord(key)
 	if MODIFIER_KEYS[key] then return nil end
 	local chord = ""
@@ -523,6 +576,8 @@ end
 
 -- Renvoie le nom que porte dans un raccourci un bouton de souris reçu par OnClick, hors
 -- boutons gauche et droit, qui ne s'assignent pas
+-- EN: Returns the name that a mouse button received by OnClick carries in a binding, excluding the left and right
+--     buttons, which cannot be bound
 local function MouseKey(mouseButton)
 	if mouseButton == "MiddleButton" then return "BUTTON3" end
 	local number = mouseButton:match("^Button(%d+)$")
@@ -534,6 +589,10 @@ end
 -- annule ; un clic droit retire la touche. Une touche qui sert déjà à un autre raccourci du
 -- jeu doit être pressée une seconde fois pour lui être prise. Renvoie de quoi interrompre
 -- l'attente d'une touche.
+-- EN: Interaction key: its name on the left, on the right a button that displays it. A left click on the button
+--     waits for the next key (or mouse button, or mouse wheel step), Escape cancels; a right click removes the key.
+--     A key already used by another game binding must be pressed a second time to be taken from it. Returns a way to
+--     interrupt waiting for a key.
 local function AddKeybind(column, name)
 	local row = CreateFrame("Frame", nil, column.parent)
 	row:SetSize(column.width, 26)
@@ -549,10 +608,10 @@ local function AddKeybind(column, name)
 	button:SetSize(150, 22)
 	button:SetPoint("RIGHT", 0, 0)
 	button:RegisterForClicks("AnyUp")
-	button:EnableKeyboard(false) -- ne pas capter de touches tant qu'on n'écoute pas
+	button:EnableKeyboard(false) -- ne pas capter de touches tant qu'on n'écoute pas | EN: do not capture keys while not listening
 	keybindButton = button
-	local listening = false  -- le bouton attend une touche
-	local contested          -- touche qui sert déjà ailleurs, en attente d'une seconde pression
+	local listening = false  -- le bouton attend une touche | EN: the button is waiting for a key
+	local contested          -- touche qui sert déjà ailleurs, en attente d'une seconde pression | EN: key already used elsewhere, waiting for a second press
 
 	local function ShowTooltip()
 		GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
@@ -576,6 +635,7 @@ local function AddKeybind(column, name)
 	end
 
 	-- Tant qu'il attend une touche, le bouton garde pour lui le clavier et la molette
+	-- EN: While it waits for a key, the button keeps the keyboard and mouse wheel to itself
 	local function Listen(on)
 		listening, contested = on, nil
 		button:EnableKeyboard(on)
@@ -623,10 +683,11 @@ local function AddKeybind(column, name)
 	end)
 	button:SetScript("OnEnter", ShowTooltip)
 	button:SetScript("OnLeave", function() GameTooltip:Hide() end)
-	button:SetScript("OnEvent", Update) -- raccourcis changés ailleurs, dans les options du jeu par exemple
+	button:SetScript("OnEvent", Update) -- raccourcis changés ailleurs, dans les options du jeu par exemple | EN: bindings changed elsewhere, in the game options for example
 	button:RegisterEvent("UPDATE_BINDINGS")
 	refreshers[#refreshers + 1] = Update
 	-- pour la fermeture de la fenêtre : rend le clavier si le bouton attendait une touche
+	-- EN: for closing the window: releases the keyboard if the button was waiting for a key
 	return function()
 		if listening then Listen(false) end
 	end
@@ -635,6 +696,7 @@ end
 ---------------------------------------------------------------------------
 -- Fenêtre
 ---------------------------------------------------------------------------
+-- EN: Window
 
 local function RefreshMenu()
 	refreshing = true
@@ -644,6 +706,8 @@ end
 
 -- Montre une page : "settings", ou "look", avec les objets dont elle règle l'apparence s'ils
 -- sont donnés ("all", ou une catégorie, que la fenêtre d'aperçu montre alors si elle est ouverte)
+-- EN: Shows a page: "settings", or "look", with the objects whose appearance it sets if they are given ("all", or a
+--     category, which the preview window then shows if it is open)
 local function Open(name, scope)
 	openPage, effectScope = name, scope or effectScope
 	for key, page in pairs(pages) do page:SetShown(key == name) end
@@ -652,12 +716,14 @@ local function Open(name, scope)
 end
 
 -- Titre de la page des objets : il dit pour lesquels elle règle l'apparence
+-- EN: Title of the objects page: it says which ones it sets the appearance for
 local function LookTitle()
 	local category = ScopeCategory()
 	return category and L.LOOK_OF:format(L["CATEGORY_" .. category:upper()]) or L.LOOK_OF_ALL
 end
 
 -- Nom de l'effet que portent ces objets : tous (nil), ou une catégorie
+-- EN: Name of the effect these objects carry: all (nil), or a category
 local function EffectName(category)
 	return L["EFFECT_" .. ns.GetOption("effect", category):upper()]
 end
@@ -665,6 +731,9 @@ end
 -- Ligne de la liste des objets, à la manière d'un métier dans sa fenêtre : une icône, un nom
 -- et, dessous, l'effet que portent ces objets. La cliquer règle la page sur eux. Pour une
 -- catégorie (`key`), elle porte aussi sa couleur et la case qui la met ou non en lumière.
+-- EN: Row of the objects list, like a profession in its window: an icon, a name and, below, the effect these objects
+--     carry. Clicking it sets the page to them. For a category (`key`), it also carries its color and the checkbox
+--     that turns its highlighting on or off.
 local function AddEntry(column, name, icon, key)
 	local scope = key or "all"
 	local row = CreateFrame("CheckButton", nil, column.parent)
@@ -725,11 +794,13 @@ end
 
 -- (port retail) Dessin des onglets de pages, posé sur l'onglet du jeu, dont l'icône reste vide sur
 -- retail : la page des objets porte l'effet Faisceau, en or ; les autres une icône du jeu
+-- EN: (retail port) Drawing for the page tabs, placed on the game's tab, whose icon stays empty on retail: the
+--     objects page carries the Beam (Faisceau) effect, in gold; the others a game icon
 local TAB_EFFECT = { look = "beam" }
 local TAB_FILE = { settings = ICONS .. "INV_Misc_Wrench_01", nodes = ICONS .. NODES_ICON }
 
 function ns.DrawTab(button, name)
-	if not button.Icon then return end -- l'onglet de Classic montre déjà son icône
+	if not button.Icon then return end -- l'onglet de Classic montre déjà son icône | EN: the Classic tab already shows its icon
 	local side = math.min(button:GetWidth() or 0, button:GetHeight() or 0)
 	if side <= 0 then side = 32 end
 	side = side * 0.75
@@ -755,7 +826,7 @@ function ns.DrawTab(button, name)
 		texture:SetSize(side, side)
 		texture:SetPoint("CENTER")
 		Skin.SetIcon(texture, file)
-		texture:SetTexCoord(0.08, 0.92, 0.08, 0.92) -- sans le liseré des icônes du jeu
+		texture:SetTexCoord(0.08, 0.92, 0.08, 0.92) -- sans le liseré des icônes du jeu | EN: without the border of the game's icons
 	end
 end
 
@@ -767,6 +838,7 @@ local function CreateMenu()
 		self:StopMovingOrSizing()
 		local point, _, relativePoint, x, y = self:GetPoint(1)
 		-- "+ 0" : pas de -0 dans les réglages sauvegardés, Lua 5.1 y relirait tous les zéros en -0
+		-- EN: "+ 0": no -0 in the saved settings, Lua 5.1 would read all the zeros back as -0
 		ns.db.menuPoint = { point, relativePoint, x + 0, y + 0 }
 	end)
 	local saved = ns.db.menuPoint
@@ -774,10 +846,11 @@ local function CreateMenu()
 	if saved then
 		frame:SetPoint(saved[1], UIParent, saved[2], saved[3], saved[4])
 	else
-		frame:SetPoint("LEFT", UIParent, "LEFT", 30, 20) -- à gauche : le personnage reste visible
+		frame:SetPoint("LEFT", UIParent, "LEFT", 30, 20) -- à gauche : le personnage reste visible | EN: on the left: the character stays visible
 	end
 
 	-- Sous la barre de titre, à droite du portrait : le nom de la page
+	-- EN: Under the title bar, to the right of the portrait: the page name
 	local heading = frame:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
 	heading:SetPoint("TOPLEFT", 68, -33)
 	refreshers[#refreshers + 1] = function()
@@ -786,9 +859,13 @@ local function CreateMenu()
 
 	-- Les onglets du bord droit : un par page. Celle de la minimap n'existe qu'avec NodeScan.lua,
 	-- qu'une mise à jour faite pendant que le jeu tourne n'a pas encore chargé.
+	-- EN: The tabs on the right edge: one per page. The minimap one only exists with NodeScan.lua, which an update
+	--     made while the game is running has not loaded yet.
 	local list = { { "look", Skin.PORTRAIT, "HEADER_OBJECTS" } }
 	-- (port retail) ni sur un client qui ne laisse pas lire les points de la minimap : la page
 	-- n'y aurait que des réglages sans effet
+	-- EN: (retail port) nor on a client that does not allow reading minimap points: the page would only have
+	--     settings with no effect there
 	if ns.UpdateNodes and not (ns.NodesFailure and ns.NodesFailure()) then
 		list[#list + 1] = { "nodes", ICONS .. NODES_ICON, "NODES_PAGE" }
 	end
@@ -814,6 +891,7 @@ local function CreateMenu()
 	end
 
 	-- Page des objets. À gauche leur liste : tous, puis chaque catégorie.
+	-- EN: Objects page. On the left their list: All, then each category.
 	local page = pages.look
 	local column = NewCard(page, 0, 0, LIST, height, "HEADER_OBJECTS")
 	AddEntry(column, "SCOPE_ALL", Skin.PORTRAIT)
@@ -823,6 +901,8 @@ local function CreateMenu()
 
 	-- À droite, leur apparence : ce qu'elle règle au juste, puis l'effet et ses réglages. Tout
 	-- s'applique aussitôt à la lueur en cours.
+	-- EN: On the right, their appearance: what exactly it sets, then the effect and its settings. Everything applies
+	--     immediately to the current glow.
 	column = NewCard(page, LIST + GAP, 0, page:GetWidth() - LIST - GAP, height)
 	column.tight = true
 	local note = column.parent:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
@@ -832,6 +912,7 @@ local function CreateMenu()
 	note:SetTextColor(0.75, 0.75, 0.75)
 	column.y = column.y - 28
 	-- marge à gauche des contrôles, pour leurs cases « remplacer Tous »
+	-- EN: margin to the left of the controls, for their « remplacer Tous » ("Override All") checkboxes
 	column.x, column.width = column.x + 22, column.width - 22
 	local shared = AddButton(frame, "SHARED", function() ns.ClearOwnSettings(ScopeCategory()) end, 190)
 	shared:SetPoint("TOPRIGHT", -EDGE - 2, -30)
@@ -839,6 +920,7 @@ local function CreateMenu()
 		local category = ScopeCategory()
 		note:SetText(category and L.SCOPE_ONE_TIP or L.SCOPE_ALL_TIP)
 		-- le bouton n'a de sens que pour une catégorie qui a des réglages à elle
+		-- EN: the button only makes sense for a category that has its own settings
 		local own = openPage == "look" and category ~= nil and ns.HasOwnSettings(category)
 		shared:SetEnabled(own)
 		shared:SetShown(own)
@@ -849,6 +931,8 @@ local function CreateMenu()
 	AddSlider(column, "OFFSET", "offsetY", nil, true, 200)
 	column.y = column.y - 4
 	-- une case par ligne (port retail : chacune a sa case « remplacer Tous » devant elle)
+	-- EN: one checkbox per line (retail port: each has its « remplacer Tous » ("Override All") checkbox in front of
+	--     it)
 	AddCheckbox(column, "SILHOUETTE", ScopedGetter("silhouette"), function(checked)
 		ns.SetOption("silhouette", checked, ScopeCategory())
 		local failure = ns.SilhouetteFailure()
@@ -864,6 +948,9 @@ local function CreateMenu()
 	-- Page de la minimap : à gauche les icônes des filons et des plantes ; à droite l'alternance des
 	-- deux pistages, pour qui a les deux métiers. Rien n'y explique les couleurs des anneaux : une
 	-- légende y était, que le joueur a fait retirer.
+	-- EN: Minimap page: on the left the icons for ore veins and herbs; on the right the alternation between the two
+	--     tracking types, for those who have both professions. Nothing there explains the ring colors: there was a
+	--     legend, which the player had removed.
 	local half = (page:GetWidth() - GAP) / 2
 	page = pages.nodes
 	if page then
@@ -874,6 +961,7 @@ local function CreateMenu()
 			AddSlider(column, "NODE_SIZE", "nodeSize"),
 		}
 		-- sur un client qui ne sait pas lire les points de la minimap : pourquoi tout est grisé
+		-- EN: on a client that cannot read minimap points: why everything is grayed out
 		local reason = column.parent:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
 		reason:SetPoint("TOPLEFT", column.x, column.y - 4)
 		reason:SetWidth(column.width)
@@ -891,6 +979,7 @@ local function CreateMenu()
 	end
 
 	-- Page des réglages : quatre panneaux, qui valent pour tous les objets
+	-- EN: Settings page: four panels, which apply to all objects
 	page = pages.settings
 	local upper = 214
 	column = NewCard(page, 0, 0, half, upper, "HEADER_DETECTION")
@@ -906,6 +995,7 @@ local function CreateMenu()
 	AddOption(column, "DEBUG", "debug")
 	-- chaque langue se présente sous le nom qu'elle se donne, pour rester reconnaissable depuis
 	-- n'importe quelle autre
+	-- EN: each language presents itself under its own name, to stay recognizable from any other
 	local languages, codes = { { "auto", "LANGUAGE_AUTO" } }, {}
 	for code in pairs(ns.LOCALES) do codes[#codes + 1] = code end
 	table.sort(codes)
@@ -924,6 +1014,7 @@ local function CreateMenu()
 	local zoneShown = AddCheckbox(column, "ZONE_SHOW", ns.IsZoneShown, ns.ShowZone)
 	refreshers[#refreshers + 1] = function()
 		-- sur un client qui ne sait pas découper, il n'y a rien à régler
+		-- EN: on a client that cannot clip, there is nothing to set
 		local available = not ns.SilhouetteFailure()
 		zoneScale:SetAvailable(available)
 		zoneShift:SetAvailable(available)
@@ -933,16 +1024,18 @@ local function CreateMenu()
 	for name, shown in pairs(pages) do shown:SetShown(name == openPage) end
 
 	-- Au pied de la fenêtre : l'aperçu, la remise à zéro, et entre eux la version
+	-- EN: At the bottom of the window: the preview, the reset, and the version between them
 	local preview = AddButton(frame, "PREVIEW", function()
 		if not ns.TogglePreview then return end
 		previewStarted = ns.TogglePreview()
 		-- l'aperçu s'ouvre sur la catégorie dont la page est en train de régler l'apparence
+		-- EN: the preview opens on the category whose appearance the page is currently setting
 		local category = ScopeCategory()
 		if previewStarted and category and ns.ShowPreviewCategory then ns.ShowPreviewCategory(category) end
 	end)
 	preview:SetPoint("BOTTOMLEFT", EDGE, 12)
 
-	local confirmLeft -- secondes qui restent pour confirmer la remise à zéro, nil hors confirmation
+	local confirmLeft -- secondes qui restent pour confirmer la remise à zéro, nil hors confirmation | EN: seconds left to confirm the reset, nil outside confirmation
 	local reset = AddButton(frame, "DEFAULTS", function()
 		if confirmLeft then
 			confirmLeft = nil
@@ -997,6 +1090,7 @@ end
 ---------------------------------------------------------------------------
 -- Bouton de la minimap
 ---------------------------------------------------------------------------
+-- EN: Minimap button
 
 local function PlaceMinimapButton()
 	local angle = math.rad(ns.db.minimap.angle)
@@ -1005,6 +1099,7 @@ local function PlaceMinimapButton()
 end
 
 -- Pendant qu'on le fait glisser, le bouton suit le curseur autour de la minimap
+-- EN: While it is being dragged, the button follows the cursor around the minimap
 local function DragMinimapButton()
 	local centerX, centerY = Minimap:GetCenter()
 	local cursorX, cursorY = GetCursorPosition()
@@ -1024,6 +1119,7 @@ local function ShowMinimapTooltip(self)
 end
 
 -- Mêmes textures et mêmes cotes que les boutons des autres addons, pour s'aligner sur eux
+-- EN: Same textures and same dimensions as other addons' buttons, to line up with them
 local function CreateMinimapButton()
 	local button = CreateFrame("Button", "LueurMinimapButton", Minimap)
 	minimapButton = button
@@ -1075,9 +1171,12 @@ end
 ---------------------------------------------------------------------------
 -- Entrée dans les options du jeu
 ---------------------------------------------------------------------------
+-- EN: Entry in the game options
 
 -- Les joueurs cherchent les réglages d'un addon dans Options > AddOns : Lueur y pose une page
 -- qui mène à sa fenêtre. Le jeu la reparente quand il l'affiche.
+-- EN: Players look for an addon's settings in Options > AddOns: Lueur places a page there that leads to its window.
+--     The game reparents it when it displays it.
 local function RegisterOptionsPage()
 	if not (Settings and Settings.RegisterCanvasLayoutCategory and Settings.RegisterAddOnCategory) then return end
 	local page = CreateFrame("Frame", nil, UIParent)
@@ -1095,6 +1194,7 @@ local function RegisterOptionsPage()
 	open:SetScript("OnClick", function()
 		PlaySound(SOUNDKIT.IG_MAINMENU_OPTION)
 		-- la fenêtre d'options du jeu recouvrirait celle de Lueur
+		-- EN: the game's options window would cover Lueur's
 		if SettingsPanel and HideUIPanel then pcall(HideUIPanel, SettingsPanel) end
 		if not (menu and menu:IsShown()) then ns.ToggleMenu() end
 	end)
@@ -1105,24 +1205,30 @@ end
 ---------------------------------------------------------------------------
 -- Liens avec Lueur.lua et avec le jeu
 ---------------------------------------------------------------------------
+-- EN: Links with Lueur.lua and with the game
 
 -- Appelée par Lueur.lua à chaque changement de réglage, d'où qu'il vienne
+-- EN: Called by Lueur.lua on every setting change, wherever it comes from
 function ns.Refresh()
 	if minimapButton then
 		minimapButton:SetShown(not ns.db.minimap.hide)
-		minimapButton.icon:SetDesaturated(not ns.db.enabled) -- gris quand Lueur est désactivé
+		minimapButton.icon:SetDesaturated(not ns.db.enabled) -- gris quand Lueur est désactivé | EN: gray when Lueur is disabled
 	end
 	if menu and menu:IsShown() then RefreshMenu() end
 end
 
 -- Appelée par Lueur.lua quand la langue change : repose les textes fixes de la fenêtre. Les
 -- valeurs suivent avec le rafraîchissement qui accompagne tout changement de réglage.
+-- EN: Called by Lueur.lua when the language changes: resets the window's fixed texts. The values follow with the
+--     refresh that accompanies every setting change.
 function ns.Retext()
 	for _, apply in ipairs(captions) do apply() end
 end
 
 -- Appelée par Preview.lua quand ses flèches changent de catégorie : si le menu en
 -- personnalisait une, c'est désormais celle que montre l'aperçu
+-- EN: Called by Preview.lua when its arrows change category: if the menu was customizing one, it is now the one the
+--     preview shows
 function ns.FollowPreview(category)
 	if effectScope ~= "all" and effectScope ~= category then
 		effectScope = category
@@ -1131,12 +1237,14 @@ function ns.FollowPreview(category)
 end
 
 -- Affiche ou masque le bouton de la minimap (case du menu, /lueur minimap)
+-- EN: Shows or hides the minimap button (menu checkbox, /lueur minimap)
 function ns.ShowMinimapButton(shown)
 	ns.db.minimap.hide = not shown
 	ns.Refresh()
 end
 
 -- Appelée par Lueur.lua une fois les réglages chargés
+-- EN: Called by Lueur.lua once the settings are loaded
 function ns.SetupInterface()
 	CreateMinimapButton()
 	RegisterOptionsPage()
@@ -1144,6 +1252,7 @@ function ns.SetupInterface()
 end
 
 -- Entrée de Lueur dans le menu des addons de la minimap (déclarée dans le .toc)
+-- EN: Lueur's entry in the minimap addons menu (declared in the .toc)
 function Lueur_OnAddonCompartmentClick()
 	ns.ToggleMenu()
 end

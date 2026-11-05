@@ -1,4 +1,5 @@
 -- Lueur : textes en espagnol (servent aussi aux clients esMX)
+-- EN: Lueur: Spanish texts (also used by esMX clients)
 
 local _, ns = ...
 
@@ -28,6 +29,7 @@ L.COMMANDS = {
 ---------------------------------------------------------------------------
 -- Catégories, états, effets
 ---------------------------------------------------------------------------
+-- EN: Categories, states, effects
 
 L.CATEGORY_ORE = "Minerales"
 L.CATEGORY_ORE_TIP = "Filones y vetas de mineral."
@@ -224,6 +226,7 @@ L.TIP_DRAG = "Arrastrar: mover este botón"
 ---------------------------------------------------------------------------
 -- Messages des commandes
 ---------------------------------------------------------------------------
+-- EN: Command messages
 
 L.MSG_ENABLED = "activado."
 L.MSG_DISABLED = "desactivado, tus ajustes originales quedan restaurados."
@@ -323,6 +326,7 @@ L.SCAN_NOTHING = "nada (pon el puntero sobre un punto del minimapa y vuelve a es
 ---------------------------------------------------------------------------
 -- Diagnostic (/lueur debug)
 ---------------------------------------------------------------------------
+-- EN: Diagnostics (/lueur debug)
 
 L.DEBUG_NO_TARGET = "ya no hay objetivo de interacción"
 L.DEBUG_PAUSED = "en pausa (combate o estancia)"
@@ -356,6 +360,7 @@ L.DEBUG_BEHIND = "detrás de la cámara: %s"
 ---------------------------------------------------------------------------
 -- Aide (/lueur ayuda)
 ---------------------------------------------------------------------------
+-- EN: Help (/lueur ayuda)
 
 L.HELP_HEADER = "comandos:"
 L.HELP = {

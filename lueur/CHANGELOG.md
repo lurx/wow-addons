@@ -3,7 +3,7 @@
 Changes against **Lueur 1.4.0** by Armytille ([CurseForge](https://www.curseforge.com/wow/addons/lueur), file `Lueur-1.4.0.zip`, Oct 21, 2026).
 Tested on World of Warcraft Retail 12.1.5 (Midnight). Not tested on Classic Era or Forever after these changes, though every change is meant to leave those clients as they were.
 
-Comments added to the code are in French, to match the original. Each one is tagged `(port retail)`.
+Every comment, the original's and ours, is in French followed by an English translation: an `-- EN:` line under each comment block, or `| EN:` after a comment at the end of a line. Comments added by the port are tagged `(port retail)`.
 
 ## 1.4.0-retail3
 

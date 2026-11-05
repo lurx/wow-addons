@@ -5,6 +5,11 @@
 -- les gabarits et les images de Blizzard, donc avec le dessin du client qui tourne. Le client
 -- qui n'a pas un gabarit ou un atlas reçoit à sa place un équivalent fait d'images présentes
 -- partout. Menu.lua et Preview.lua assemblent ces pièces ; rien ici ne connaît les réglages.
+-- EN: Lueur: window skinning. Lueur's windows (settings, preview) look like the game's screens, like the professions
+--     window: the portrait frame, dark panels with a rounded border, icon tabs on the side, icon buttons like spell
+--     buttons. This file builds them with Blizzard's templates and images, and so with the art of the running
+--     client. A client that lacks a template or an atlas gets an equivalent made from images available everywhere
+--     instead. Menu.lua and Preview.lua assemble these pieces; nothing here knows about the settings.
 
 local ADDON_NAME, ns = ...
 
@@ -13,16 +18,18 @@ ns.Skin = Skin
 
 local PORTRAIT = "Interface\\AddOns\\" .. ADDON_NAME .. "\\Media\\portrait.tga"
 local UNKNOWN_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
-local SLOT_INSET = 3  -- l'image d'un emplacement d'icône s'arrête avant son liseré
+local SLOT_INSET = 3  -- l'image d'un emplacement d'icône s'arrête avant son liseré | EN: the image of an icon slot stops before its border
 Skin.PORTRAIT = PORTRAIT
 
 -- Panneau : le fond et le filet arrondi des infobulles du jeu, assombris
+-- EN: Panel: the background and rounded border of the game's tooltips, darkened
 local CARD = {
 	bgFile = "Interface\\Tooltips\\UI-Tooltip-Background", edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
 	tile = true, tileSize = 16, edgeSize = 14, insets = { left = 3, right = 3, top = 3, bottom = 3 },
 }
 
 -- Crée un cadre d'après un gabarit du jeu ; nil sur le client qui n'a pas ce gabarit
+-- EN: Creates a frame from a game template; nil on a client that lacks this template
 local function FromTemplate(kind, name, parent, template)
 	local ok, frame = pcall(CreateFrame, kind, name, parent, template)
 	return ok and frame or nil
@@ -35,6 +42,7 @@ local function HasAtlas(atlas)
 end
 
 -- Donne son image à une icône ; faute de la trouver, le point d'interrogation du jeu
+-- EN: Gives an icon its image; failing that, the game's question mark
 local function SetIcon(texture, file)
 	if texture:SetTexture(file) == false then texture:SetTexture(UNKNOWN_ICON) end
 end
@@ -42,10 +50,13 @@ Skin.SetIcon = SetIcon
 
 -- Fenêtre : le cadre à portrait du jeu, avec l'icône de Lueur pour portrait. La souris la
 -- déplace, Échap et sa croix la ferment. `frame.title` est son titre, `frame.close` sa croix.
+-- EN: Window: the game's portrait frame, with Lueur's icon as the portrait. The mouse moves it, Escape and its close
+--     button close it. `frame.title` is its title, `frame.close` its close button.
 function Skin.Window(name, width, height)
 	local frame = FromTemplate("Frame", name, UIParent, "PortraitFrameTemplate")
 	if frame then
 		-- le titre et le portrait ont changé de place d'une version du cadre à l'autre
+		-- EN: the title and portrait moved from one version of the frame to another
 		frame.title = frame.TitleContainer and frame.TitleContainer.TitleText or frame.TitleText
 		frame.close = frame.CloseButton
 		local portrait = frame.PortraitContainer and frame.PortraitContainer.portrait or frame.portrait
@@ -77,11 +88,12 @@ function Skin.Window(name, width, height)
 	frame:RegisterForDrag("LeftButton")
 	frame:SetScript("OnDragStart", frame.StartMoving)
 	frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
-	tinsert(UISpecialFrames, name) -- se ferme avec Échap
+	tinsert(UISpecialFrames, name) -- se ferme avec Échap | EN: closes with Escape
 	return frame
 end
 
 -- Panneau sombre au filet arrondi, comme ceux où la fenêtre des métiers range chaque métier
+-- EN: Dark panel with a rounded border, like the ones in which the professions window lists each profession
 function Skin.Card(parent, width, height)
 	local card = FromTemplate("Frame", nil, parent, "BackdropTemplate")
 	if card and card.SetBackdrop then
@@ -100,10 +112,13 @@ end
 
 -- Onglet d'icône sur le bord droit d'une fenêtre, sous `previous` s'il y en a un avant lui.
 -- `tab.tooltipText` est son infobulle, SetChecked le montre choisi ou non.
+-- EN: Icon tab on the right edge of a window, below `previous` if there is one before it. `tab.tooltipText` is its
+--     tooltip, SetChecked shows it as selected or not.
 function Skin.SideTab(window, previous, icon, onClick)
 	local tab = FromTemplate("Frame", nil, window, "LargeSideTabButtonTemplate")
 	if tab and tab.Icon and tab.SetChecked and tab.SetCustomOnMouseUpHandler then
 		-- l'onglet des fenêtres du jeu : il s'enfonce, sonne et montre son infobulle de lui-même
+		-- EN: the tab from the game's windows: it presses in, plays a sound and shows its tooltip by itself
 		SetIcon(tab.Icon, icon)
 		if tab.SetFillToInterior then tab:SetFillToInterior(true) end
 		tab:SetCustomOnMouseUpHandler(function(_, mouseButton, inside)
@@ -118,6 +133,7 @@ function Skin.SideTab(window, previous, icon, onClick)
 	end
 	if tab then tab:Hide() end
 	-- à défaut, l'onglet du grimoire de Classic
+	-- EN: failing that, the Classic spellbook tab
 	tab = CreateFrame("CheckButton", nil, window)
 	tab:SetSize(32, 32)
 	local back = tab:CreateTexture(nil, "BACKGROUND")
@@ -133,7 +149,7 @@ function Skin.SideTab(window, previous, icon, onClick)
 	if glow then glow:SetBlendMode("ADD") end
 	tab:SetScript("OnClick", function()
 		PlaySound(SOUNDKIT.IG_CHARACTER_INFO_TAB)
-		onClick() -- la fenêtre recoche ensuite l'onglet de la page qu'elle montre
+		onClick() -- la fenêtre recoche ensuite l'onglet de la page qu'elle montre | EN: the window then re-checks the tab of the page it shows
 	end)
 	tab:SetScript("OnEnter", function(self)
 		if not self.tooltipText then return end
@@ -152,6 +168,8 @@ end
 
 -- Emplacement d'icône dessiné sur `frame` : un fond noir, l'image, et le liseré des boutons de
 -- sort. Renvoie la texture de l'image, et l'emplacement lui-même pour y ancrer autre chose.
+-- EN: Icon slot drawn on `frame`: a black background, the image, and the spell button border. Returns the image
+--     texture, and the slot itself for anchoring something else to it.
 function Skin.Slot(frame, size, point, x, y)
 	local back = frame:CreateTexture(nil, "BACKGROUND")
 	back:SetSize(size - 2 * SLOT_INSET, size - 2 * SLOT_INSET)
@@ -159,11 +177,11 @@ function Skin.Slot(frame, size, point, x, y)
 	back:SetColorTexture(0, 0, 0, 0.85)
 	local icon = frame:CreateTexture(nil, "BORDER")
 	icon:SetAllPoints(back)
-	icon:SetTexCoord(0.07, 0.93, 0.07, 0.93) -- sans le bord dessiné dans les icônes du jeu
+	icon:SetTexCoord(0.07, 0.93, 0.07, 0.93) -- sans le bord dessiné dans les icônes du jeu | EN: without the border drawn into the game's icons
 	local rim = frame:CreateTexture(nil, "OVERLAY")
 	rim:SetPoint("CENTER", back, "CENTER", 0, 0)
 	if HasAtlas("Profession-square-frame") then
-		rim:SetAtlas("Profession-square-frame", true) -- le liseré des boutons de la fenêtre des métiers
+		rim:SetAtlas("Profession-square-frame", true) -- le liseré des boutons de la fenêtre des métiers | EN: the border of the professions window buttons
 	else
 		rim:SetTexture("Interface\\Buttons\\UI-Quickslot2")
 		rim:SetSize(size * 1.7, size * 1.7)
@@ -173,6 +191,8 @@ end
 
 -- Bouton d'icône, comme ceux des sorts dans la fenêtre des métiers : il s'éclaire au survol,
 -- s'enfonce sous le clic et garde un liseré doré tant qu'il est coché. `button.icon` est son image.
+-- EN: Icon button, like the spell buttons in the professions window: it lights up on hover, presses in on click and
+--     keeps a gold border while checked. `button.icon` is its image.
 function Skin.IconButton(parent, size)
 	local button = CreateFrame("CheckButton", nil, parent)
 	button:SetSize(size, size)

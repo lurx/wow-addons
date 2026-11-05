@@ -14,21 +14,32 @@
 --                     une septième valeur vraie blanchit la couche, comme le cœur d'une lumière
 -- Update peut laisser dans fx.waveSize, fx.waveY et fx.waveAngle la taille de référence des
 -- ondes, leur hauteur et leur rotation.
+-- EN: Lueur: the effects. An effect is one way of drawing the glow placed on the targeted object. Lueur.lua
+--     maintains the state shared by all of them (arrival, in range, unavailable, colour) and passes it every frame
+--     to the chosen effect, which only places and tints its own layers. An effect declares: Build(fx, Layer) creates
+--     its layers in fx; Layer(image, layer, sublayer, blend) Update(fx, c) animates them; c describes the current
+--     frame (see Animate in Lueur.lua) wave, flat the image of its waves and their flattening; without wave, no
+--     waves waveGain their intensity; ping = false: no regular wave band the image of its fade-out, when it is not a
+--     plain glow icon its drawing on its menu button, layer by layer: { image, width, height, x, y, opacity }, as
+--     fractions of the button's side; a seventh true value whitens the layer, like the core of a light Update may
+--     leave in fx.waveSize, fx.waveY and fx.waveAngle the reference size of the waves, their height and their
+--     rotation.
 
 local _, ns = ...
 
 local sin, cos, min, max, sqrt, random, pi = math.sin, math.cos, math.min, math.max, math.sqrt, math.random, math.pi
 local TWO_PI = 2 * pi
 
-local GROUND     = 0.36   -- aplatissement d'un cercle posé au sol, sous l'angle habituel de la caméra
-local RING_ORBIT = 0.37   -- rayon de l'anneau fin, en fraction de la largeur de son image
-local FOOT       = -0.12  -- hauteur du sol sous le centre de l'objet, en fraction de la taille de l'effet
+local GROUND     = 0.36   -- aplatissement d'un cercle posé au sol, sous l'angle habituel de la caméra | EN: flattening of a circle lying on the ground, at the usual camera angle
+local RING_ORBIT = 0.37   -- rayon de l'anneau fin, en fraction de la largeur de son image | EN: radius of the thin ring, as a fraction of its image's width
+local FOOT       = -0.12  -- hauteur du sol sous le centre de l'objet, en fraction de la taille de l'effet | EN: height of the ground below the object's centre, as a fraction of the effect's size
 
 local function Lerp(a, b, t)
 	return a + (b - a) * t
 end
 
 -- Une taille nulle rendrait à la couche les dimensions de son image
+-- EN: A zero size would give the layer back its image's dimensions
 local function Sized(texture, width, height)
 	texture:SetSize(max(width, 0.01), max(height or width, 0.01))
 end
@@ -43,6 +54,8 @@ end
 
 -- Voile sombre couché au sol, sous la lumière : sans lui, un effet additif s'efface sur la
 -- neige ou le sable. Sa couche porte l'image "glow", dont la tache n'occupe que le centre.
+-- EN: Dark veil lying on the ground, under the light: without it, an additive effect fades away on snow or sand. Its
+--     layer carries the "glow" image, whose spot only fills the centre.
 local function GroundShade(texture, c, width, y)
 	Sized(texture, width, width * GROUND * 1.3)
 	Place(texture, c.frame, 0, y)
@@ -55,11 +68,13 @@ local EFFECTS = {}
 ns.EFFECTS = EFFECTS
 
 -- Ordre du menu : ceux qui entourent l'objet, puis ceux qui se posent au sol ou s'élèvent
+-- EN: Menu order: those that surround the object, then those that lie on the ground or rise up
 ns.EFFECT_ORDER = { "aura", "reticle", "subtle", "sigil", "brackets", "beam", "beacon", "orbit", "ripple", "sparkle" }
 
 ---------------------------------------------------------------------------
 -- Halos : une même construction, dont chaque variante pèse les couches à sa façon
 ---------------------------------------------------------------------------
+-- EN: Halos: one shared construction, each variant weighting the layers its own way
 
 local MOTE_COUNT = 3
 
@@ -79,10 +94,11 @@ local function Halo(weight)
 
 		Update = function(fx, c)
 			local alpha, ready, locked, flash = c.alpha, c.ready, c.locked, c.flash
-			local size = c.size * (1 + 0.45 * (1 - c.arrive))  -- le halo se resserre en arrivant
+			local size = c.size * (1 + 0.45 * (1 - c.arrive))  -- le halo se resserre en arrivant | EN: the halo tightens on arrival
 			fx.waveSize = size
 
 			-- voile sombre sous la lumière : un halo additif s'efface sur la neige ou le sable
+			-- EN: dark veil under the light: an additive halo fades away on snow or sand
 			Sized(fx.shade, size * 1.06)
 			Tint(fx.shade, 0, 0, 0, alpha * weight.shade * 0.30)
 
@@ -93,6 +109,7 @@ local function Halo(weight)
 			Tint(fx.ring, c.hr, c.hg, c.hb, alpha * weight.ring * (Lerp(0.25, 0.75, ready) + 0.25 * flash))
 
 			-- comètes : sens horaire, plus rapides à portée
+			-- EN: comets: clockwise, faster in range
 			Sized(fx.arcs, size)
 			fx.arcs:SetRotation(c.spin)
 			Tint(fx.arcs, c.hr, c.hg, c.hb, alpha * weight.arcs * Lerp(0.45, 0.95, ready) * (1 - locked))
@@ -103,6 +120,7 @@ local function Halo(weight)
 				alpha * weight.flare * (Lerp(0.35, 0.90, ready) * (0.7 + 0.3 * c.twinkle) + 0.4 * flash) * (1 - locked))
 
 			-- lucioles : en orbite sur l'anneau, à contresens des comètes, visibles à portée
+			-- EN: fireflies: orbiting on the ring, opposite to the comets, visible in range
 			local orbit = size * RING_ORBIT
 			for i, mote in ipairs(fx.motes) do
 				local angle = -0.6 * c.spin + i * TWO_PI / MOTE_COUNT
@@ -123,11 +141,14 @@ EFFECTS.reticle.icon = { { "halo", 1, 1, 0, 0, 0.3 }, { "ring", 1, 1, 0, 0, 1 },
 EFFECTS.subtle.icon = { { "halo", 1, 1, 0, 0, 0.9 }, { "flare", 0.32, 0.32, 0, 0, 0.6, true } }
 -- Sert quand les images d'un effet sont introuvables (dossier Media incomplet, ou jeu pas
 -- relancé après l'installation) : chaque couche porte alors une texture du jeu.
+-- EN: Used when an effect's images cannot be found (incomplete Media folder, or game not restarted after
+--     installing): each layer then carries a game texture.
 EFFECTS.fallback = Halo({ shade = 0.0, band = 1.00, ring = 0.00, arcs = 0.00, flare = 1.00, motes = 0, waves = 0.0 })
 
 ---------------------------------------------------------------------------
 -- Sceau : un cercle de runes et sa figure, qui tournent en sens contraires
 ---------------------------------------------------------------------------
+-- EN: Seal: a circle of runes and its figure, turning in opposite directions
 
 EFFECTS.sigil = {
 	band = "halo", wave = "ring",
@@ -147,6 +168,7 @@ EFFECTS.sigil = {
 		local size = c.size * (1 + 0.30 * (1 - c.arrive))
 		fx.waveSize = size
 		-- le sceau s'emballe au passage à portée, et se fige sur un objet indisponible
+		-- EN: the seal speeds up when coming into range, and freezes on an unavailable object
 		fx.turn = fx.turn + c.elapsed * (Lerp(0.22, 0.55, ready) + 2.5 * flash) * (1 - locked)
 
 		Sized(fx.shade, size * 1.10)
@@ -160,6 +182,7 @@ EFFECTS.sigil = {
 		Tint(fx.circle, c.hr, c.hg, c.hb, alpha * (Lerp(0.55, 0.95, ready) + 0.25 * flash))
 
 		-- les sommets de la figure courent sur le rang de tirets du cercle
+		-- EN: the figure's vertices run along the circle's row of dashes
 		Sized(fx.figure, circle * 0.72)
 		fx.figure:SetRotation(-1.6 * fx.turn)
 		Tint(fx.figure, c.hr, c.hg, c.hb, alpha * Lerp(0.38, 0.85, ready) * (1 - 0.4 * locked))
@@ -173,6 +196,7 @@ EFFECTS.sigil = {
 ---------------------------------------------------------------------------
 -- Viseur : quatre coins en losange, qui pivotent et se referment en cadre à portée
 ---------------------------------------------------------------------------
+-- EN: Reticle: four corners in a diamond, which rotate and close into a frame in range
 
 EFFECTS.brackets = {
 	wave = "brackets", waveGain = 0.7,
@@ -203,6 +227,7 @@ EFFECTS.brackets = {
 		Tint(fx.corners, c.hr, c.hg, c.hb, alpha * (Lerp(0.60, 0.95, ready) + 0.25 * flash))
 
 		-- la mise au point : un anneau fin et un éclat, qui n'apparaissent qu'à portée
+		-- EN: the focus: a thin ring and a flash, which only appear in range
 		Sized(fx.ring, size * Lerp(0.90, 0.58, lock))
 		Tint(fx.ring, c.hr, c.hg, c.hb, alpha * 0.55 * ready * (1 - locked))
 		Sized(fx.flare, size * (0.22 + 0.10 * ready + 0.04 * c.twinkle + 0.30 * flash))
@@ -213,6 +238,7 @@ EFFECTS.brackets = {
 ---------------------------------------------------------------------------
 -- Faisceau : une colonne de lumière qui s'élève de l'objet
 ---------------------------------------------------------------------------
+-- EN: Beam: a column of light rising from the object
 
 local SPARK_COUNT = 4
 
@@ -234,16 +260,19 @@ EFFECTS.beam = {
 		local size, alpha, ready, locked, flash = c.size, c.alpha, c.ready, c.locked, c.flash
 		local foot = FOOT * size
 		-- le faisceau jaillit du sol à l'arrivée, s'allonge à portée, retombe sur un objet indisponible
+		-- EN: the beam shoots up from the ground on arrival, lengthens in range, falls back on an unavailable object
 		local height = size * (1.30 + 0.30 * ready + 0.20 * flash) * (0.25 + 0.75 * c.arrive) * (1 - 0.40 * locked)
 		local middle = foot + height / 2
 		fx.waveSize, fx.waveY = size * 0.90, foot
 
 		-- voile sombre dressé derrière la colonne, plus large qu'elle
+		-- EN: dark veil standing behind the column, wider than it
 		Sized(fx.shade, size * 1.5, height * 1.5)
 		Place(fx.shade, c.frame, 0, middle - height * 0.12)
 		Tint(fx.shade, 0, 0, 0, alpha * 0.22)
 
 		-- flaque de lumière au pied
+		-- EN: pool of light at the base
 		local pool = size * (1.10 + 0.10 * c.breath)
 		Sized(fx.pool, pool, pool * GROUND * 1.3)
 		Place(fx.pool, c.frame, 0, foot)
@@ -258,6 +287,7 @@ EFFECTS.beam = {
 		Tint(fx.core, c.wr, c.wg, c.wb, alpha * (Lerp(0.50, 0.95, ready) + 0.3 * flash) * (1 - 0.6 * locked))
 
 		-- étincelles : elles montent le long du faisceau en se balançant, plus vite à portée
+		-- EN: sparks: they rise along the beam, swaying, faster in range
 		local travel = -c.spin
 		for i, spark in ipairs(fx.sparks) do
 			local climb = (travel * 0.30 + i / SPARK_COUNT) % 1
@@ -277,6 +307,7 @@ EFFECTS.beam = {
 ---------------------------------------------------------------------------
 -- Balise : un cristal qui flotte au-dessus de l'objet
 ---------------------------------------------------------------------------
+-- EN: Beacon: a crystal floating above the object
 
 EFFECTS.beacon = {
 	wave = "ring", flat = GROUND,
@@ -296,6 +327,7 @@ EFFECTS.beacon = {
 		local size, alpha, ready, locked, flash = c.size, c.alpha, c.ready, c.locked, c.flash
 		local foot = FOOT * size
 		-- le cristal descend se poser au-dessus de l'objet, y flotte, et s'en rapproche à portée
+		-- EN: the crystal descends to settle above the object, floats there, and draws closer to it in range
 		local hover = size * (Lerp(0.78, 0.66, ready) + 0.55 * (1 - c.arrive) + 0.035 * sin(c.phase) * (1 - locked))
 		local gem = size * (0.52 + 0.06 * flash)
 		fx.waveSize, fx.waveY = size * 0.80, foot
@@ -307,6 +339,7 @@ EFFECTS.beacon = {
 		Tint(fx.pool, c.r, c.g, c.b, alpha * Lerp(0.50, 0.85, ready))
 
 		-- fil de lumière, du sol à la pointe du cristal
+		-- EN: thread of light, from the ground to the tip of the crystal
 		local reach = max(hover - gem * 0.40 - foot, 0.01)
 		Sized(fx.thread, size * 0.22, reach)
 		Place(fx.thread, c.frame, 0, foot + reach / 2)
@@ -321,6 +354,7 @@ EFFECTS.beacon = {
 		Tint(fx.gem, Lerp(c.r, 1, 0.25), Lerp(c.g, 1, 0.25), Lerp(c.b, 1, 0.25), alpha * Lerp(0.85, 1, ready))
 
 		-- reflet sur la facette la plus claire
+		-- EN: highlight on the brightest facet
 		Sized(fx.glint, gem * (0.55 + 0.25 * c.twinkle + 0.60 * flash))
 		Place(fx.glint, c.frame, -gem * 0.07, hover + gem * 0.17)
 		Tint(fx.glint, c.wr, c.wg, c.wb, alpha * (Lerp(0.30, 0.85, ready) * c.twinkle + 0.5 * flash) * (1 - locked))
@@ -330,6 +364,7 @@ EFFECTS.beacon = {
 ---------------------------------------------------------------------------
 -- Orbite : des feux follets tournent autour de l'objet, au ras du sol
 ---------------------------------------------------------------------------
+-- EN: Orbit: wisps circle around the object, close to the ground
 
 local WISP_COUNT, TAIL_LENGTH = 3, 8
 
@@ -354,6 +389,7 @@ EFFECTS.orbit = {
 	Update = function(fx, c)
 		local size, alpha, ready, locked = c.size, c.alpha, c.ready, c.locked
 		-- l'orbite se resserre en arrivant, puis encore un peu à portée
+		-- EN: the orbit tightens on arrival, then a little more in range
 		local radius = size * Lerp(0.46, 0.40, ready) * (1 + 0.6 * (1 - c.arrive))
 		local travel = -2 * c.spin
 		fx.waveSize = radius / RING_ORBIT
@@ -369,7 +405,7 @@ EFFECTS.orbit = {
 			local lift = size * 0.03 * sin(c.phase + i * 2.1)
 			for k = 0, TAIL_LENGTH do
 				local angle = head - k * 0.07
-				local depth = -sin(angle)  -- 1 : devant l'objet, -1 : derrière lui, plus petit et plus pâle
+				local depth = -sin(angle)  -- 1 : devant l'objet, -1 : derrière lui, plus petit et plus pâle | EN: 1: in front of the object, -1: behind it, smaller and paler
 				local texture = wisp[k]
 				Place(texture, c.frame, cos(angle) * radius, sin(angle) * radius * GROUND + lift)
 				Sized(texture, size * (k == 0 and 0.20 or 0.17) * (1 + 0.28 * depth) * 0.90 ^ k)
@@ -390,6 +426,7 @@ EFFECTS.orbit = {
 ---------------------------------------------------------------------------
 -- Onde : des rides s'étalent sur le sol autour de l'objet
 ---------------------------------------------------------------------------
+-- EN: Wave: ripples spread across the ground around the object
 
 local RIPPLE_COUNT = 3
 
@@ -419,6 +456,7 @@ EFFECTS.ripple = {
 		Tint(fx.pool, c.r, c.g, c.b, alpha * Lerp(0.55, 0.90, ready))
 
 		-- chaque ride naît au centre, s'élargit en ralentissant et s'éteint
+		-- EN: each ripple is born at the centre, widens as it slows down, and fades out
 		for i, ring in ipairs(fx.rings) do
 			local spread = (travel * 0.40 + i / RIPPLE_COUNT) % 1
 			local width = size * Lerp(0.30, 1.70, 1 - (1 - spread) ^ 2) * (0.6 + 0.4 * c.arrive)
@@ -437,6 +475,7 @@ EFFECTS.ripple = {
 ---------------------------------------------------------------------------
 -- Étincelles : des éclats naissent et s'éteignent autour de l'objet
 ---------------------------------------------------------------------------
+-- EN: Sparkles: flashes appear and fade out around the object
 
 local STAR_COUNT, DUST_COUNT = 6, 3
 
@@ -463,6 +502,7 @@ EFFECTS.sparkle = {
 		Tint(fx.haze, c.r, c.g, c.b, alpha * Lerp(0.40, 0.62, ready) * (0.85 + 0.15 * c.breath))
 
 		-- poussières : elles montent lentement à travers la lueur
+		-- EN: motes: they rise slowly through the glow
 		local travel = -c.spin
 		for i, dust in ipairs(fx.dust) do
 			local climb = (travel * 0.14 + i / DUST_COUNT) % 1
@@ -473,6 +513,8 @@ EFFECTS.sparkle = {
 
 		-- éclats : chacun s'allume quelque part dans le disque, s'éteint, puis renaît ailleurs ;
 		-- au passage à portée, tous repartent ensemble
+		-- EN: flashes: each one lights up somewhere in the disc, fades out, then reappears elsewhere; when coming
+		--     into range, they all restart together
 		local burst = c.flash > fx.flash
 		fx.flash = c.flash
 		for _, star in ipairs(fx.stars) do
@@ -482,7 +524,7 @@ EFFECTS.sparkle = {
 				star.x, star.y = cos(angle) * reach, sin(angle) * reach
 				star.life = 0.7 + 0.9 * random()
 				star.scale = 0.55 + 0.75 * random()
-				star.age = burst and 0 or -0.5 * random()  -- hors de ces départs groupés, un temps de noir
+				star.age = burst and 0 or -0.5 * random()  -- hors de ces départs groupés, un temps de noir | EN: outside these grouped starts, a stretch of darkness
 			end
 			local shine = star.age > 0 and sin(pi * star.age / star.life) or 0
 			Place(star.texture, c.frame, star.x * size * 0.40, star.y * size * 0.40)

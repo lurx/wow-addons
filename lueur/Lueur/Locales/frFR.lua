@@ -1,4 +1,5 @@
 -- Lueur : textes en français
+-- EN: Lueur: French texts
 
 local _, ns = ...
 
@@ -27,6 +28,7 @@ L.COMMANDS = {
 ---------------------------------------------------------------------------
 -- Catégories, états, effets
 ---------------------------------------------------------------------------
+-- EN: Categories, states, effects
 
 L.CATEGORY_ORE = "Minerais"
 L.CATEGORY_ORE_TIP = "Filons de minerai."
@@ -223,6 +225,7 @@ L.TIP_DRAG = "Glisser : déplacer ce bouton"
 ---------------------------------------------------------------------------
 -- Messages des commandes
 ---------------------------------------------------------------------------
+-- EN: Command messages
 
 L.MSG_ENABLED = "activé."
 L.MSG_DISABLED = "désactivé, tes réglages d'origine sont restaurés."
@@ -322,6 +325,7 @@ L.SCAN_NOTHING = "rien (pose le pointeur sur un point de la minimap et retape la
 ---------------------------------------------------------------------------
 -- Diagnostic (/lueur debug)
 ---------------------------------------------------------------------------
+-- EN: Diagnostics (/lueur debug)
 
 L.DEBUG_NO_TARGET = "plus de cible d'interaction"
 L.DEBUG_PAUSED = "en pause (combat ou instance)"
@@ -355,6 +359,7 @@ L.DEBUG_BEHIND = "derrière la caméra : %s"
 ---------------------------------------------------------------------------
 -- Aide (/lueur aide)
 ---------------------------------------------------------------------------
+-- EN: Help (/lueur aide)
 
 L.HELP_HEADER = "commandes :"
 L.HELP = {

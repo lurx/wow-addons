@@ -1,4 +1,5 @@
 -- Lueur : textes en allemand
+-- EN: Lueur: German texts
 
 local _, ns = ...
 
@@ -27,6 +28,7 @@ L.COMMANDS = {
 ---------------------------------------------------------------------------
 -- Catégories, états, effets
 ---------------------------------------------------------------------------
+-- EN: Categories, states, effects
 
 L.CATEGORY_ORE = "Erze"
 L.CATEGORY_ORE_TIP = "Erzadern und Erzvorkommen."
@@ -223,6 +225,7 @@ L.TIP_DRAG = "Ziehen: diesen Knopf verschieben"
 ---------------------------------------------------------------------------
 -- Messages des commandes
 ---------------------------------------------------------------------------
+-- EN: Command messages
 
 L.MSG_ENABLED = "aktiviert."
 L.MSG_DISABLED = "deaktiviert, deine ursprünglichen Einstellungen sind wiederhergestellt."
@@ -322,6 +325,7 @@ L.SCAN_NOTHING = "nichts (setze den Zeiger auf einen Punkt der Minikarte und gib
 ---------------------------------------------------------------------------
 -- Diagnostic (/lueur debug)
 ---------------------------------------------------------------------------
+-- EN: Diagnostics (/lueur debug)
 
 L.DEBUG_NO_TARGET = "kein Interaktionsziel mehr"
 L.DEBUG_PAUSED = "pausiert (Kampf oder Instanz)"
@@ -355,6 +359,7 @@ L.DEBUG_BEHIND = "hinter der Kamera: %s"
 ---------------------------------------------------------------------------
 -- Aide (/lueur hilfe)
 ---------------------------------------------------------------------------
+-- EN: Help (/lueur hilfe)
 
 L.HELP_HEADER = "Befehle:"
 L.HELP = {

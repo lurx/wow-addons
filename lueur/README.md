@@ -21,7 +21,7 @@ All credit for the addon goes to Armytille. This port only adds what retail need
 
 ## Install
 
-1. Copy the `Lueur` folder from this repo to `World of Warcraft/_retail_/Interface/AddOns/`.
+1. Download [Lueur-1.4.0-retail3.zip](Lueur-1.4.0-retail3.zip?raw=1) and unzip it, or copy the `Lueur` folder from this repo. Either way you get a `Lueur` folder; put it in `World of Warcraft/_retail_/Interface/AddOns/`.
 2. Start WoW, or type `/reload` if it's already running.
 3. Type `/lueur` to open the settings, or `/lueur help` for the commands.
 
@@ -41,7 +41,7 @@ The full list, file by file, is in [CHANGELOG.md](CHANGELOG.md), including what 
 
 ## For Armytille
 
-This is offered back to you. Feel free to take any or all of it into the official Lueur. Every change is guarded so Classic Era and Forever should behave as in 1.4.0. Comments in the code are in French and tagged `(port retail)` so they're easy to find. If you'd rather this didn't exist as a separate download, say so and it'll stay here only as a reference.
+This is offered back to you. Feel free to take any or all of it into the official Lueur. Every change is guarded so Classic Era and Forever should behave as in 1.4.0. The French comments are kept as they were, with an English translation added under each one (`-- EN:`). The port's own comments are tagged `(port retail)`, so they're easy to find. If you'd rather this didn't exist as a separate download, say so and it'll stay here only as a reference.
 
 ## Known issues
 
