@@ -529,8 +529,15 @@ function ns.BuildBody()
     end
   end
 
-  local lines = { "/dismount [mounted,noflying]" }
-  if #clauses > 0 then lines[#lines + 1] = "/cast [mounted];" .. table.concat(clauses, ";") end
+  -- While flying: do nothing (no mid-air dismount). While mounted on the
+  -- ground: cast the usual pick, which dismounts you and gives the button a
+  -- real icon (an empty "[mounted];" would show a question mark).
+  local lines = {}
+  local default = loc or ground or fly
+  local defaultName = default and ns.EntryInfo(default)
+  local head = defaultName and ("[flying];[mounted]" .. defaultName .. ";") or "[mounted];"
+  if not defaultName then lines[#lines + 1] = "/dismount [mounted,noflying]" end
+  if #clauses > 0 then lines[#lines + 1] = "/cast " .. head .. table.concat(clauses, ";") end
 
 
   local preview = loc or (IsFlyableArea and IsFlyableArea() and fly) or ground or fly
