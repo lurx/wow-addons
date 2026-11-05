@@ -1,0 +1,55 @@
+# Builds and publishes a One-Click Mount release whenever the version in
+# OneClickMount.toc changes on main (or when run by hand from the Actions tab).
+name: Release One-Click Mount
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "one-click-mount/OneClickMount/**"
+      - "one-click-mount/RELEASE_NOTES.md"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version from the .toc
+        id: v
+        run: |
+          version=$(grep -m1 '^## Version:' one-click-mount/OneClickMount/OneClickMount.toc | awk '{print $3}' | tr -d '\r')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=one-click-mount-v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Skip if this version is already released
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${{ steps.v.outputs.tag }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build the zip
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          cd one-click-mount
+          zip -r "../OneClickMount-${{ steps.v.outputs.version }}.zip" OneClickMount
+
+      - name: Publish the release
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.v.outputs.tag }}" \
+            "OneClickMount-${{ steps.v.outputs.version }}.zip" \
+            --target "$GITHUB_SHA" \
+            --title "One-Click Mount ${{ steps.v.outputs.version }}" \
+            --notes-file one-click-mount/RELEASE_NOTES.md
