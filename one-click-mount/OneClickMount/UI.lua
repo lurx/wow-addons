@@ -9,6 +9,7 @@ local GAP = 6                -- between two cards
 local PAD = 16               -- inside a card
 local CARD_HEAD = 40         -- card title row
 local SLOT, SLOT_GAP, ROW_H = 38, 8, 50
+local SUB_H, SUB_INDENT = 24, 20 -- compact sub-rows (an option under a rule)
 local ICON = "Interface\\Icons\\inv_horse3saddle008_brown"
 local UNKNOWN_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 
@@ -115,12 +116,13 @@ local function SkinRowWidgets(w)
   local S = ns.euiSkin
   if not S or w.switch then return end
   local sw = CreateFrame("Button", nil, w.parent)
-  sw:SetSize(30, 16)
-  sw:SetPoint("LEFT", w.parent, "TOPLEFT", 16, w.mid)
+  local indent = w.compact and SUB_INDENT or 0
+  sw:SetSize(w.compact and 24 or 30, w.compact and 12 or 16)
+  sw:SetPoint("LEFT", w.parent, "TOPLEFT", 16 + indent, w.mid)
   sw.track = sw:CreateTexture(nil, "BACKGROUND")
   sw.track:SetAllPoints()
   sw.knob = sw:CreateTexture(nil, "ARTWORK")
-  sw.knob:SetSize(12, 12)
+  sw.knob:SetSize(w.compact and 8 or 12, w.compact and 8 or 12)
   function sw:SetChecked(on) self.on = on and true or false; PaintSwitch(self) end
   sw:SetScript("OnClick", function() w.Toggle() end)
   sw:SetScript("OnEnter", w.check:GetScript("OnEnter"))
@@ -130,8 +132,12 @@ local function SkinRowWidgets(w)
   w.switch = sw
   w.check:Hide()
   w.label:ClearAllPoints()
-  w.label:SetPoint("BOTTOMLEFT", w.parent, "TOPLEFT", 16 + 38, w.mid + 1)
-  w.label:SetWidth(112)
+  if w.compact then
+    w.label:SetPoint("LEFT", sw, "RIGHT", 6, 0)
+  else
+    w.label:SetPoint("BOTTOMLEFT", w.parent, "TOPLEFT", 16 + 38, w.mid + 1)
+    w.label:SetWidth(112)
+  end
   SkinText(w.label)
   SkinText(w.hint)
   SkinText(w.note)
@@ -315,7 +321,7 @@ local CARD_BACKDROP = {
 }
 
 -- y is the card's top, relative to the page.
-local function CreateCard(page, y, rows, titleText)
+local function CreateCard(page, y, rows, titleText, extraH)
   local card = FromTemplate("Frame", nil, page, "BackdropTemplate") or CreateFrame("Frame", nil, page)
   if card.SetBackdrop then
     card:SetBackdrop(CARD_BACKDROP)
@@ -328,12 +334,12 @@ local function CreateCard(page, y, rows, titleText)
   end
   card:SetPoint("TOPLEFT", 0, y)
   card:SetPoint("TOPRIGHT", 0, y)
-  card:SetHeight(CardHeight(rows))
+  card:SetHeight(CardHeight(rows) + (extraH or 0))
   card.title = card:CreateFontString(nil, "ARTWORK", "GameFontNormal")
   card.title:SetPoint("TOPLEFT", PAD, -14)
   card.title:SetText(titleText)
   SkinText(card.title)
-  card.bottom = y - CardHeight(rows)
+  card.bottom = y - CardHeight(rows) - (extraH or 0)
   skinCards[#skinCards + 1] = card
   SkinCard(card)
   return card
@@ -581,9 +587,11 @@ local function CreateSlot(w, index, x, y)
   return b
 end
 
-local function CreateRow(parent, y, nSlots, removable, first)
+local function CreateRow(parent, y, nSlots, removable, first, compact)
   local w = { parent = parent, slots = {} }
-  local mid = y - ROW_H / 2 -- vertical centre of the row
+  local mid = y - (compact and SUB_H or ROW_H) / 2 -- vertical centre of the row
+  w.compact = compact
+  local indent = compact and SUB_INDENT or 0
   w.mid = mid
 
   -- Flip this row's rule (used by the EllesmereUI switch).
@@ -595,7 +603,7 @@ local function CreateRow(parent, y, nSlots, removable, first)
     Changed()
   end
 
-  if not first then
+  if not first and not compact then
     w.line = parent:CreateTexture(nil, "ARTWORK")
     w.line:SetColorTexture(1, 1, 1, 0.07)
     w.line:SetHeight(1)
@@ -605,8 +613,8 @@ local function CreateRow(parent, y, nSlots, removable, first)
 
   w.check = FromTemplate("CheckButton", nil, parent, "MinimalCheckboxTemplate")
     or CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
-  w.check:SetSize(26, 26)
-  w.check:SetPoint("LEFT", parent, "TOPLEFT", PAD - 4, mid)
+  w.check:SetSize(compact and 20 or 26, compact and 20 or 26)
+  w.check:SetPoint("LEFT", parent, "TOPLEFT", PAD - 4 + indent, mid)
   w.check:SetScript("OnClick", function(self)
     if InCombatLockdown() or not w.row then
       self:SetChecked(not self:GetChecked())
@@ -626,14 +634,22 @@ local function CreateRow(parent, y, nSlots, removable, first)
   end)
   w.check:SetScript("OnLeave", GameTooltip_Hide)
 
-  w.label = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-  w.label:SetPoint("BOTTOMLEFT", parent, "TOPLEFT", PAD + 26, mid + 1)
+  w.label = parent:CreateFontString(nil, "ARTWORK", compact and "GameFontNormalSmall" or "GameFontNormal")
+  if compact then
+    w.label:SetPoint("LEFT", w.check, "RIGHT", 2, 0)
+  else
+    w.label:SetPoint("BOTTOMLEFT", parent, "TOPLEFT", PAD + 26, mid + 1)
+  end
   w.label:SetWidth(122)
   w.label:SetJustifyH("LEFT")
   w.label:SetWordWrap(false)
 
   w.hint = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-  w.hint:SetPoint("TOPLEFT", w.label, "BOTTOMLEFT", 0, -3)
+  if compact then
+    w.hint:SetPoint("LEFT", w.label, "RIGHT", 8, 0) -- same line, after the label
+  else
+    w.hint:SetPoint("TOPLEFT", w.label, "BOTTOMLEFT", 0, -3)
+  end
   w.hint:SetTextColor(0.6, 0.6, 0.6)
 
   for i = 1, nSlots do
@@ -774,6 +790,13 @@ end
 local GENERAL = {
   GeneralRow("flying", "Flying", "Where you can fly", 4,
     { note = PoolNote("Empty: random favorite"), emptyHint = "Drop a flying mount here." }),
+  {
+    label = "Dismount while flying", hint = "mid-air clicks drop you", slots = 0, compact = true,
+    list = function() return {} end,
+    isOn = function() return ns.AllowFlyingDismount() end,
+    setOn = function(v) ns.SetAllowFlyingDismount(v) end,
+    note = function() return "" end,
+  },
   GeneralRow("ground", "Ground", "No-fly zones", 4,
     { note = PoolNote("Empty: random favorite"), emptyHint = "Drop a ground mount here." }),
   GeneralRow("combat", "Combat / indoors", "Class speed spell", 1, {
@@ -783,13 +806,6 @@ local GENERAL = {
       return (e and ns.EntryInfo(e)) or "None for your class"
     end,
   }),
-  {
-    label = "Dismount while flying", hint = "Off: mid-air clicks do nothing", slots = 0,
-    list = function() return {} end,
-    isOn = function() return ns.AllowFlyingDismount() end,
-    setOn = function(v) ns.SetAllowFlyingDismount(v) end,
-    note = function() return ns.AllowFlyingDismount() and "Clicks drop you" or "" end,
-  },
   GeneralRow("shift", "Shift", "Vendor, passenger...", 4),
   GeneralRow("ctrl", "Ctrl", "Anything", 4),
   GeneralRow("alt", "Alt", "Anything", 4),
@@ -798,12 +814,18 @@ local GENERAL = {
 -- General page: Mounts and Modifiers cards. Returns the view and its height.
 local function BuildGeneral(parent)
   local v = { frame = parent, widgets = {} }
-  local mountsCard = CreateCard(parent, 0, 4, "Mounts")
+  -- Mounts: Flying, its "Dismount while flying" sub-row, Ground, Combat.
+  local mountsCard = CreateCard(parent, 0, 3, "Mounts", SUB_H)
   local modsCard = CreateCard(parent, mountsCard.bottom - GAP, 3, "Modifiers")
+  local y = -CARD_HEAD
   for r = 1, #GENERAL do
-    local card = (r <= 4) and mountsCard or modsCard
-    local k = (r <= 4) and r or (r - 4)
-    v.widgets[r] = CreateRow(card, RowY(k), GENERAL[r].slots, false, k == 1)
+    local row = GENERAL[r]
+    local inMounts = r <= 4
+    local card = inMounts and mountsCard or modsCard
+    if r == 5 then y = -CARD_HEAD end
+    local first = (r == 1 or r == 5)
+    v.widgets[r] = CreateRow(card, y, row.slots, false, first, row.compact)
+    y = y - (row.compact and SUB_H or ROW_H)
   end
 
   v.modsHint = modsCard:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
