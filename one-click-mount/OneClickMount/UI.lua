@@ -43,6 +43,28 @@ local function SkinText(fs)
   EUIFont(fs)
 end
 
+-- /ocm font: what the font step sees (for troubleshooting).
+function ns.DebugFont()
+  local p = function(...) print("|cff66ccffOCM font:|r", ...) end
+  p("skin active:", ns.euiSkin and "yes" or "no", " registered texts:", #fonts)
+  if EllesmereUI then
+    p("GetFontPath():", tostring(EllesmereUI.GetFontPath and EllesmereUI.GetFontPath()))
+    p("GetFontName():", tostring(EllesmereUI.GetFontName and EllesmereUI.GetFontName()))
+  else
+    p("EllesmereUI not loaded")
+  end
+  if ns.euiSkin then p("skin S.GetFont():", tostring((ns.euiSkin.GetFont()))) end
+  local fs = fonts[1]
+  if fs then
+    p("first text now uses:", tostring((fs:GetFont())))
+    local path = EllesmereUI and EllesmereUI.GetFontPath and EllesmereUI.GetFontPath()
+    if path then
+      local ok = fs:SetFont(path, select(2, fs:GetFont()) or 12, "")
+      p("SetFont with that path returned:", tostring(ok), " now:", tostring((fs:GetFont())))
+    end
+  end
+end
+
 local function ApplyFonts()
   if not ns.euiSkin then return end
   for i = 1, #fonts do EUIFont(fonts[i]) end

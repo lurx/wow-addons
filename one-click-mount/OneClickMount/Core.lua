@@ -711,6 +711,10 @@ SLASH_ONECLICKMOUNT1 = "/ocm"
 SLASH_ONECLICKMOUNT2 = "/oneclickmount"
 SlashCmdList.ONECLICKMOUNT = function(msg)
   msg = (msg or ""):lower()
+  if msg == "font" then
+    if ns.DebugFont then ns.DebugFont() end
+    return
+  end
   if msg == "eui" then
     if EllesmereUI and EllesmereUI.OpenPlugin and EllesmereUI.OpenPlugin(ADDON) then return end
     print("|cff66ccffOne-Click Mount:|r EllesmereUI isn't loaded.")
