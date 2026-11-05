@@ -9,13 +9,88 @@ local GAP = 6                -- between two cards
 local PAD = 16               -- inside a card
 local CARD_HEAD = 40         -- card title row
 local SLOT, SLOT_GAP, ROW_H = 38, 8, 50
-local ICON = "Interface\\Icons\\Ability_Mount_RidingHorse"
+local ICON = "Interface\\Icons\\inv_horse3saddle008_brown"
 local UNKNOWN_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 
 local function CardHeight(rows) return CARD_HEAD + rows * ROW_H + 4 end
 
 -- Everything an optional reskin (EllesmereUI) needs to reach.
 local skinCards, skinRows = {}, {}
+
+-- Skin helpers: no-ops until EllesmereUI hands us its skinning facade
+-- (ns.euiSkin). Called at creation time too, so pages built later (like
+-- EllesmereUI's own options pages, built when first opened) get skinned.
+local function SkinText(fs)
+  if ns.euiSkin and fs then ns.euiSkin.Font(fs) end
+end
+
+local function SkinCard(card)
+  local S = ns.euiSkin
+  if not S or card.euiSkinned then return end
+  card.euiSkinned = true
+  if card.SetBackdrop then card:SetBackdrop(nil) end
+  S.Panel(card, { inset = true })
+  S.Font(card.title)
+end
+
+local function SkinIconSlot(b)
+  local S = ns.euiSkin
+  if not S or not b then return end
+  if b.rim then b.rim:SetAlpha(0) end
+  S.SquareIcon(b.icon, b)
+end
+
+local function SkinButton(btn)
+  local S = ns.euiSkin
+  if not S or not btn then return end
+  S.Button(btn)
+  S.WhiteButtonLabel(btn)
+end
+
+-- EllesmereUI-style switch (dark track, square knob, accent colour when on).
+-- Drawn by us: EllesmereUI's own switch lives in its load-on-demand options.
+local switches = {}
+local function PaintSwitch(sw)
+  local r, g, b = 0.05, 0.82, 0.62
+  if ns.euiSkin then r, g, b = ns.euiSkin.GetAccentColor() end
+  sw.knob:ClearAllPoints()
+  if sw.on then
+    sw.track:SetColorTexture(r, g, b, 0.85)
+    sw.knob:SetColorTexture(1, 1, 1, 1)
+    sw.knob:SetPoint("RIGHT", sw, "RIGHT", -2, 0)
+  else
+    sw.track:SetColorTexture(0.22, 0.22, 0.22, 1)
+    sw.knob:SetColorTexture(0.6, 0.6, 0.6, 1)
+    sw.knob:SetPoint("LEFT", sw, "LEFT", 2, 0)
+  end
+end
+
+local function SkinRowWidgets(w)
+  local S = ns.euiSkin
+  if not S or w.switch then return end
+  local sw = CreateFrame("Button", nil, w.parent)
+  sw:SetSize(30, 16)
+  sw:SetPoint("LEFT", w.parent, "TOPLEFT", 16, w.mid)
+  sw.track = sw:CreateTexture(nil, "BACKGROUND")
+  sw.track:SetAllPoints()
+  sw.knob = sw:CreateTexture(nil, "ARTWORK")
+  sw.knob:SetSize(12, 12)
+  function sw:SetChecked(on) self.on = on and true or false; PaintSwitch(self) end
+  sw:SetScript("OnClick", function() w.Toggle() end)
+  sw:SetScript("OnEnter", w.check:GetScript("OnEnter"))
+  sw:SetScript("OnLeave", GameTooltip_Hide)
+  sw:SetChecked(w.check:GetChecked())
+  switches[#switches + 1] = sw
+  w.switch = sw
+  w.check:Hide()
+  w.label:ClearAllPoints()
+  w.label:SetPoint("BOTTOMLEFT", w.parent, "TOPLEFT", 16 + 38, w.mid + 1)
+  w.label:SetWidth(112)
+  S.Font(w.label)
+  S.Font(w.hint)
+  S.Font(w.note)
+  if w.remove then S.CloseButton(w.remove) end
+end
 
 local function FromTemplate(kind, name, parent, template)
   local ok, frame = pcall(CreateFrame, kind, name, parent, template)
@@ -97,22 +172,29 @@ end
 ---------------------------------------------------------------------------
 -- The button you drag to your action bar
 ---------------------------------------------------------------------------
-local out = CreateFrame("Button", nil, P)
-out:SetSize(32, 32)
+-- A drag-to-bar button: picks up the One-Click Mount macro.
+local function MakeDragButton(parent, size)
+  local btn = CreateFrame("Button", nil, parent)
+  btn:SetSize(size, size)
+  SkinSlot(btn, size)
+  SkinIconSlot(btn)
+  btn:RegisterForDrag("LeftButton")
+  btn:RegisterForClicks("LeftButtonUp")
+  btn:SetScript("OnDragStart", ns.PickupButton)
+  btn:SetScript("OnClick", ns.PickupButton)
+  btn:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+    GameTooltip:AddLine("One-Click Mount")
+    GameTooltip:AddLine("Drag this onto your action bar.", 1, 1, 1, true)
+    GameTooltip:AddLine("It updates itself when you change slots, spec or zone.", 0.7, 0.7, 0.7, true)
+    GameTooltip:Show()
+  end)
+  btn:SetScript("OnLeave", GameTooltip_Hide)
+  return btn
+end
+
+local out = MakeDragButton(P, 32)
 out:SetPoint("TOPRIGHT", -EDGE - 4, -27)
-SkinSlot(out, 32)
-out:RegisterForDrag("LeftButton")
-out:RegisterForClicks("LeftButtonUp")
-out:SetScript("OnDragStart", ns.PickupButton)
-out:SetScript("OnClick", ns.PickupButton)
-out:SetScript("OnEnter", function(self)
-  GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-  GameTooltip:AddLine("One-Click Mount")
-  GameTooltip:AddLine("Drag this onto your action bar.", 1, 1, 1, true)
-  GameTooltip:AddLine("It updates itself when you change slots, spec or zone.", 0.7, 0.7, 0.7, true)
-  GameTooltip:Show()
-end)
-out:SetScript("OnLeave", GameTooltip_Hide)
 
 local outLabel = P:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
 outLabel:SetPoint("RIGHT", out, "LEFT", -8, 0)
@@ -201,6 +283,7 @@ local function CreateCard(page, y, rows, titleText)
   card.title:SetText(titleText)
   card.bottom = y - CardHeight(rows)
   skinCards[#skinCards + 1] = card
+  SkinCard(card)
   return card
 end
 
@@ -440,12 +523,23 @@ local function CreateSlot(w, index, x, y)
     GameTooltip:Show()
   end)
   b:SetScript("OnLeave", GameTooltip_Hide)
+  SkinIconSlot(b)
   return b
 end
 
 local function CreateRow(parent, y, nSlots, removable, first)
   local w = { parent = parent, slots = {} }
   local mid = y - ROW_H / 2 -- vertical centre of the row
+  w.mid = mid
+
+  -- Flip this row's rule (used by the EllesmereUI switch).
+  function w.Toggle()
+    if InCombatLockdown() or not w.row then return end
+    local on = not w.row.isOn()
+    PlaySound(on and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON or SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF)
+    w.row.setOn(on)
+    Changed()
+  end
 
   if not first then
     w.line = parent:CreateTexture(nil, "ARTWORK")
@@ -515,13 +609,14 @@ local function CreateRow(parent, y, nSlots, removable, first)
   end
 
   function w:SetShown(shown)
-    for _, k in ipairs({ "line", "check", "label", "hint", "note", "remove" }) do
-      if self[k] then self[k]:SetShown(shown) end
+    for _, k in ipairs({ "line", "check", "switch", "label", "hint", "note", "remove" }) do
+      if self[k] then self[k]:SetShown(shown and not (k == "check" and self.switch)) end
     end
     for _, b in ipairs(self.slots) do b:SetShown(shown) end
   end
 
   skinRows[#skinRows + 1] = w
+  SkinRowWidgets(w)
   return w
 end
 
@@ -571,6 +666,7 @@ local function RefreshRow(w, row, active)
   local enabled = row.isOn()
   local note = row.note and row.note(list, auto) or ""
   w.check:SetChecked(enabled)
+  if w.switch then w.switch:SetChecked(enabled) end
   w.label:SetText(row.label)
   w.hint:SetText(active and "|cff40ff40Active here|r" or row.hint)
   if not enabled then
@@ -594,8 +690,18 @@ local function PoolNote(emptyText)
 end
 
 ---------------------------------------------------------------------------
--- General tab
+-- Pages as builders. Each one renders into whatever frame it's given, so the
+-- same pages appear in our window and in EllesmereUI's options panel. All of
+-- them read the same saved data and refresh together.
 ---------------------------------------------------------------------------
+local views, headers = {}, {}
+
+local function RefreshViews()
+  for _, v in ipairs(views) do
+    if v.frame:IsVisible() then v:Refresh() end
+  end
+end
+
 local function GeneralRow(key, label, hint, slots, opts)
   opts = opts or {}
   return {
@@ -625,30 +731,38 @@ local GENERAL = {
   GeneralRow("alt", "Alt", "Anything", 4),
 }
 
-local generalWidgets = {}
-local mountsCard = CreateCard(pages[1], 0, 3, "Mounts")
-local modsCard = CreateCard(pages[1], mountsCard.bottom - GAP, 3, "Modifiers")
-for r = 1, #GENERAL do
-  local card = (r <= 3) and mountsCard or modsCard
-  local k = (r <= 3) and r or (r - 3)
-  generalWidgets[r] = CreateRow(card, RowY(k), GENERAL[r].slots, false, k == 1)
+-- General page: Mounts and Modifiers cards. Returns the view and its height.
+local function BuildGeneral(parent)
+  local v = { frame = parent, widgets = {} }
+  local mountsCard = CreateCard(parent, 0, 3, "Mounts")
+  local modsCard = CreateCard(parent, mountsCard.bottom - GAP, 3, "Modifiers")
+  for r = 1, #GENERAL do
+    local card = (r <= 3) and mountsCard or modsCard
+    local k = (r <= 3) and r or (r - 3)
+    v.widgets[r] = CreateRow(card, RowY(k), GENERAL[r].slots, false, k == 1)
+  end
+
+  v.modsHint = modsCard:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+  v.modsHint:SetPoint("TOPRIGHT", -PAD, -16)
+  v.modsHint:SetTextColor(0.6, 0.6, 0.6)
+  v.modsHint:SetText("Hold a key while clicking. Works everywhere.")
+
+  v.help = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+  v.help:SetPoint("TOPLEFT", 4, modsCard.bottom - 10)
+  v.help:SetPoint("TOPRIGHT", -4, modsCard.bottom - 10)
+  v.help:SetJustifyH("LEFT")
+  v.help:SetTextColor(0.6, 0.6, 0.6)
+  v.help:SetText("Flying takes flying mounts, Ground takes ground mounts, modifier rows take anything. Mounts a character can't use are skipped. Drag a slot to move it, right-click to clear it.")
+  SkinText(v.modsHint)
+  SkinText(v.help)
+
+  function v:Refresh()
+    for r, w in ipairs(self.widgets) do RefreshRow(w, GENERAL[r], false) end
+  end
+  views[#views + 1] = v
+  return v, -modsCard.bottom + 44
 end
 
-local modsHint = modsCard:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-modsHint:SetPoint("TOPRIGHT", -PAD, -16)
-modsHint:SetTextColor(0.6, 0.6, 0.6)
-modsHint:SetText("Hold a key while clicking. Works everywhere.")
-
-local help = pages[1]:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-help:SetPoint("TOPLEFT", 4, modsCard.bottom - 10)
-help:SetPoint("TOPRIGHT", -4, modsCard.bottom - 10)
-help:SetJustifyH("LEFT")
-help:SetTextColor(0.6, 0.6, 0.6)
-help:SetText("Flying takes flying mounts, Ground takes ground mounts, modifier rows take anything. Mounts a character can't use are skipped. Drag a slot to move it, right-click to clear it.")
-
----------------------------------------------------------------------------
--- Locations tab
----------------------------------------------------------------------------
 local function PresetRow(key, label, hint, slots, opts)
   return {
     label = label, hint = hint, slots = slots, acceptKey = opts.acceptKey, emptyHint = opts.emptyHint,
@@ -688,59 +802,6 @@ local PRESETS = {
   }),
 }
 
-local locWidgets = {}
-local presetCard = CreateCard(pages[2], 0, #PRESETS, "Special zones")
-for r = 1, #PRESETS do
-  locWidgets[r] = CreateRow(presetCard, RowY(r), PRESETS[r].slots, false, r == 1)
-end
-
-local zonesCard = CreateCard(pages[2], presetCard.bottom - GAP, ns.MAX_CUSTOM, "Your zones")
-
-local addBtn = CreateFrame("Button", nil, zonesCard, "UIPanelButtonTemplate")
-addBtn:SetSize(150, 22)
-addBtn:SetPoint("TOPRIGHT", -PAD + 4, -9)
-addBtn:SetText("Add current zone")
-addBtn:SetScript("OnClick", function()
-  if InCombatLockdown() then return end
-  local ok, msg = ns.AddCurrentZone()
-  if not ok then
-    UIErrorsFrame:AddMessage(msg, 1, 0.2, 0.2)
-    ns.SetStatus(msg, true)
-    return
-  end
-  Changed()
-end)
-if addBtn.SetMotionScriptsWhileDisabled then addBtn:SetMotionScriptsWhileDisabled(true) end
-addBtn:SetScript("OnEnter", function(self)
-  GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-  local special = ns.SpecialZoneHere()
-  local _, name = ns.CurrentZone()
-  if special then
-    GameTooltip:AddLine(special .. " is a special zone")
-    GameTooltip:AddLine("Set its mounts in Special zones above.", 1, 1, 1, true)
-  elseif #ns.LocDB().custom >= ns.MAX_CUSTOM then
-    GameTooltip:AddLine("All " .. ns.MAX_CUSTOM .. " zone rules are in use")
-    GameTooltip:AddLine("Remove one to add this zone.", 1, 1, 1, true)
-  else
-    GameTooltip:AddLine("Add " .. (name or "this zone"))
-    GameTooltip:AddLine("Mounts you drop here are used in this zone, including its buildings and caves.", 1, 1, 1, true)
-  end
-  GameTooltip:Show()
-end)
-addBtn:SetScript("OnLeave", GameTooltip_Hide)
-
-local customWidgets = {}
-for i = 1, ns.MAX_CUSTOM do
-  customWidgets[i] = CreateRow(zonesCard, RowY(i), 4, true, i == 1)
-end
-
-local emptyCustom = zonesCard:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-emptyCustom:SetPoint("TOPLEFT", PAD, RowY(1) - 6)
-emptyCustom:SetPoint("TOPRIGHT", -PAD, RowY(1) - 6)
-emptyCustom:SetJustifyH("LEFT")
-emptyCustom:SetTextColor(0.6, 0.6, 0.6)
-emptyCustom:SetText("Stand in a zone and press Add current zone to give it its own mounts. Zone rules beat Flying and Ground; Shift, Ctrl, Alt and Combat still work everywhere.")
-
 local function CustomRow(i, rule)
   return {
     label = rule.name or ("Zone " .. rule.mapID), hint = "Any mount", slots = 4, acceptKey = "custom",
@@ -753,6 +814,86 @@ local function CustomRow(i, rule)
     locKey = "custom:" .. i,
   }
 end
+
+-- Locations page: Special zones and Your zones cards.
+local function BuildLocations(parent)
+  local v = { frame = parent, presets = {}, custom = {} }
+  local presetCard = CreateCard(parent, 0, #PRESETS, "Special zones")
+  for r = 1, #PRESETS do
+    v.presets[r] = CreateRow(presetCard, RowY(r), PRESETS[r].slots, false, r == 1)
+  end
+
+  local zonesCard = CreateCard(parent, presetCard.bottom - GAP, ns.MAX_CUSTOM, "Your zones")
+
+  local addBtn = CreateFrame("Button", nil, zonesCard, "UIPanelButtonTemplate")
+  addBtn:SetSize(150, 22)
+  addBtn:SetPoint("TOPRIGHT", -PAD + 4, -9)
+  addBtn:SetText("Add current zone")
+  addBtn:SetScript("OnClick", function()
+    if InCombatLockdown() then return end
+    local ok, msg = ns.AddCurrentZone()
+    if not ok then
+      UIErrorsFrame:AddMessage(msg, 1, 0.2, 0.2)
+      ns.SetStatus(msg, true)
+      return
+    end
+    Changed()
+  end)
+  if addBtn.SetMotionScriptsWhileDisabled then addBtn:SetMotionScriptsWhileDisabled(true) end
+  addBtn:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+    local special = ns.SpecialZoneHere()
+    local _, name = ns.CurrentZone()
+    if special then
+      GameTooltip:AddLine(special .. " is a special zone")
+      GameTooltip:AddLine("Set its mounts in Special zones above.", 1, 1, 1, true)
+    elseif #ns.LocDB().custom >= ns.MAX_CUSTOM then
+      GameTooltip:AddLine("All " .. ns.MAX_CUSTOM .. " zone rules are in use")
+      GameTooltip:AddLine("Remove one to add this zone.", 1, 1, 1, true)
+    else
+      GameTooltip:AddLine("Add " .. (name or "this zone"))
+      GameTooltip:AddLine("Mounts you drop here are used in this zone, including its buildings and caves.", 1, 1, 1, true)
+    end
+    GameTooltip:Show()
+  end)
+  addBtn:SetScript("OnLeave", GameTooltip_Hide)
+  SkinButton(addBtn)
+  v.addBtn = addBtn
+
+  for i = 1, ns.MAX_CUSTOM do
+    v.custom[i] = CreateRow(zonesCard, RowY(i), 4, true, i == 1)
+  end
+
+  v.empty = zonesCard:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+  v.empty:SetPoint("TOPLEFT", PAD, RowY(1) - 6)
+  v.empty:SetPoint("TOPRIGHT", -PAD, RowY(1) - 6)
+  v.empty:SetJustifyH("LEFT")
+  v.empty:SetTextColor(0.6, 0.6, 0.6)
+  v.empty:SetText("Stand in a zone and press Add current zone to give it its own mounts. Zone rules beat Flying and Ground; Shift, Ctrl, Alt and Combat still work everywhere.")
+  SkinText(v.empty)
+
+  function v:Refresh()
+    local here = ns.LocationHere()
+    for r, w in ipairs(self.presets) do
+      local row = PRESETS[r]
+      RefreshRow(w, row, ns.activeLocation == row.locKey or (here[row.locKey] and row.isOn()))
+    end
+    local custom = ns.LocDB().custom
+    for i, w in ipairs(self.custom) do
+      local rule = custom[i]
+      local row = rule and CustomRow(i, rule)
+      RefreshRow(w, row, row and here[row.locKey] and row.isOn())
+    end
+    self.empty:SetShown(#custom == 0)
+    if #custom >= ns.MAX_CUSTOM or ns.SpecialZoneHere() then self.addBtn:Disable() else self.addBtn:Enable() end
+  end
+  views[#views + 1] = v
+  return v, -zonesCard.bottom + 4
+end
+
+-- Our own window shows one of each.
+BuildGeneral(pages[1])
+BuildLocations(pages[2])
 
 ---------------------------------------------------------------------------
 -- Status and refresh
@@ -789,29 +930,14 @@ local function HeadingText()
 end
 
 function ns.RefreshUI()
-  if not P:IsShown() then return end
-  heading:SetText(HeadingText())
-  sub:SetText((select(4, GetBuildInfo()) < 100000) and "Forever" or "Retail")
-  out.icon:SetTexture(ns.previewIcon or ICON)
-
-  if currentTab == 1 then
-    for r, w in ipairs(generalWidgets) do RefreshRow(w, GENERAL[r], false) end
-  else
-    local here = ns.LocationHere()
-    for r, w in ipairs(locWidgets) do
-      local row = PRESETS[r]
-      RefreshRow(w, row, ns.activeLocation == row.locKey or (here[row.locKey] and row.isOn()))
-    end
-    local custom = ns.LocDB().custom
-    for i, w in ipairs(customWidgets) do
-      local rule = custom[i]
-      local row = rule and CustomRow(i, rule)
-      RefreshRow(w, row, row and here[row.locKey] and row.isOn())
-    end
-    emptyCustom:SetShown(#custom == 0)
-    if #custom >= ns.MAX_CUSTOM or ns.SpecialZoneHere() then addBtn:Disable() else addBtn:Enable() end
+  if P:IsShown() then
+    heading:SetText(HeadingText())
+    sub:SetText((select(4, GetBuildInfo()) < 100000) and "Forever" or "Retail")
+    out.icon:SetTexture(ns.previewIcon or ICON)
+    ns.UpdateStatus()
   end
-  ns.UpdateStatus()
+  for _, h in ipairs(headers) do h:Refresh() end
+  RefreshViews()
 end
 
 P:SetScript("OnShow", function() SelectTab(currentTab); ns.Rebuild(); ns.RefreshUI() end)
@@ -880,31 +1006,81 @@ if EllesmereUI and EllesmereUI.RegisterSkin then
       for j, tab in ipairs(P.Tabs) do S.SetTabSelection(tab, j == currentTab) end
     end
 
-    for _, card in ipairs(skinCards) do
-      if card.SetBackdrop then card:SetBackdrop(nil) end
-      S.Panel(card, { inset = true })
-      S.Font(card.title)
+    -- Everything built so far; anything built later skins itself.
+    for _, card in ipairs(skinCards) do SkinCard(card) end
+    for _, b in ipairs(allSlots) do SkinIconSlot(b) end
+    SkinIconSlot(out)
+    for _, w in ipairs(skinRows) do SkinRowWidgets(w) end
+    for _, v in ipairs(views) do
+      SkinButton(v.addBtn)
+      SkinText(v.modsHint)
+      SkinText(v.help)
+      SkinText(v.empty)
     end
+    for _, fs in ipairs({ heading, sub, outLabel, status, credit }) do S.Font(fs) end
 
-    local function SkinSlot(b)
-      if b.rim then b.rim:SetAlpha(0) end
-      S.SquareIcon(b.icon, b)
-    end
-    for _, b in ipairs(allSlots) do SkinSlot(b) end
-    SkinSlot(out)
-
-    for _, w in ipairs(skinRows) do
-      S.Checkbox(w.check)
-      S.Font(w.label)
-      S.Font(w.hint)
-      S.Font(w.note)
-      if w.remove then S.CloseButton(w.remove) end
-    end
-
-    S.Button(addBtn)
-    S.WhiteButtonLabel(addBtn)
-    for _, fs in ipairs({ heading, sub, outLabel, modsHint, help, emptyCustom, status, credit }) do
-      S.Font(fs)
-    end
+    -- Keep our switches in step with live accent colour changes.
+    S.OnLooksChanged(function()
+      for _, sw in ipairs(switches) do PaintSwitch(sw) end
+    end)
+    RefreshViews()
   end)
+end
+
+---------------------------------------------------------------------------
+-- EllesmereUI options panel: our own sidebar section with the same two
+-- pages, built by the same builders. (EllesmereUI only lets plugins add a
+-- section of their own, so this can't live under Quality of Life.)
+---------------------------------------------------------------------------
+local function BuildEUIHeader(header, width)
+  local h = {}
+  local btn = MakeDragButton(header, 32)
+  btn:SetPoint("RIGHT", header, "RIGHT", -16, 0)
+  local label = header:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+  label:SetPoint("RIGHT", btn, "LEFT", -8, 0)
+  label:SetText("Drag to your bar")
+  local who = header:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+  who:SetPoint("LEFT", header, "LEFT", 16, 0)
+  local st = header:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+  st:SetPoint("LEFT", who, "RIGHT", 12, -1)
+  for _, fs in ipairs({ label, who, st }) do SkinText(fs) end
+  function h:Refresh()
+    btn.icon:SetTexture(ns.previewIcon or ICON)
+    who:SetText(HeadingText())
+    st:SetText(ns.statusText or "")
+    if ns.statusError then st:SetTextColor(1, 0.4, 0.4) else st:SetTextColor(0.5, 0.9, 0.5) end
+  end
+  h:Refresh()
+  headers[#headers + 1] = h
+  return 48
+end
+
+if EllesmereUI and EllesmereUI.RegisterPlugin then
+  local builders = { General = BuildGeneral, Locations = BuildLocations }
+  EllesmereUI.RegisterPlugin(ADDON, {
+    label = "One-Click Mount",
+    modules = {
+      {
+        key = "Main",
+        title = "One-Click Mount",
+        description = "One action bar button for every mount and movement spell.",
+        pages = { "General", "Locations" },
+        buildPage = function(pageName, parent, yOffset)
+          -- EllesmereUI's search runs builders once in a hidden pass: build nothing then.
+          if EllesmereUI.IsSearchPrebuild and EllesmereUI.IsSearchPrebuild() then return 0 end
+          local holder = CreateFrame("Frame", nil, parent)
+          holder:SetPoint("TOPLEFT", parent, "TOPLEFT", 12, yOffset - 8)
+          holder:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -12, yOffset - 8)
+          local _, height = builders[pageName](holder)
+          holder:SetHeight(height)
+          holder:HookScript("OnShow", function() ns.Rebuild(); ns.RefreshUI() end)
+          ns.Rebuild()
+          ns.RefreshUI()
+          return math.abs(yOffset) + 8 + height
+        end,
+        getHeaderBuilder = function() return BuildEUIHeader end,
+        onPageCacheRestore = function() ns.Rebuild(); ns.RefreshUI() end,
+      },
+    },
+  })
 end

@@ -154,7 +154,7 @@ function ns.EntryInfo(e)
     return name, SpellIcon(e.id), e.id
   elseif e.kind == "randomfav" then
     local name = SpellName(RANDOM_FAVORITE_SPELL) or "Random favorite mount"
-    return name, SpellIcon(RANDOM_FAVORITE_SPELL) or "Interface\\Icons\\Ability_Mount_RidingHorse",
+    return name, SpellIcon(RANDOM_FAVORITE_SPELL) or "Interface\\Icons\\inv_horse3saddle008_brown",
       RANDOM_FAVORITE_SPELL
   elseif e.kind == "item" then
     local icon = (C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(e.id))
@@ -609,7 +609,7 @@ function ns.Rebuild()
     secure:SetAttribute("macrotext", actions)
     local down = GetCVarBool and GetCVarBool("ActionButtonUseKeyDown")
     body = "/click " .. BUTTON_NAME .. " LeftButton" .. (down and " 1" or "")
-    macroIcon = icon or "Ability_Mount_RidingHorse"
+    macroIcon = icon or "inv_horse3saddle008_brown"
   end
 
   local idx = GetMacroIndexByName(MACRO_NAME)
@@ -711,6 +711,11 @@ SLASH_ONECLICKMOUNT1 = "/ocm"
 SLASH_ONECLICKMOUNT2 = "/oneclickmount"
 SlashCmdList.ONECLICKMOUNT = function(msg)
   msg = (msg or ""):lower()
+  if msg == "eui" then
+    if EllesmereUI and EllesmereUI.OpenPlugin and EllesmereUI.OpenPlugin(ADDON) then return end
+    print("|cff66ccffOne-Click Mount:|r EllesmereUI isn't loaded.")
+    return
+  end
   if msg == "debug" then
     print(("|cff66ccffOne-Click Mount macro|r (%d/%d chars%s):"):format(
       ns.lastLength or 0, MACRO_LIMIT, ns.usedClick and ", too long: using /click fallback" or ""))
