@@ -484,10 +484,32 @@ function ns.ClassDefault(key)
   end
 end
 
-local function Clause(cond, e, bang)
+-- A clause is { cond, name }; they're joined (and merged) in BuildBody.
+local function Clause(cond, e)
   local name = e and ns.EntryInfo(e)
   if not name then return end
-  return cond .. (bang and "!" or "") .. name
+  return { cond, name }
+end
+
+-- "[a]X;[b]X" -> "[a][b]X": adjacent clauses casting the same thing share one
+-- name, which keeps the macro under WoW's 255-character limit. Safe because
+-- clauses are tried in order and the merged one sits in the same place.
+-- An unconditional clause ("") can't be merged into, since it matches anything.
+local function JoinClauses(list)
+  local merged = {}
+  for _, cl in ipairs(list) do
+    local last = merged[#merged]
+    if last and last[2] == cl[2] and last[1] ~= "" and cl[1] ~= "" then
+      last[1] = last[1] .. cl[1]
+    elseif last and last[2] == cl[2] and cl[1] == "" then
+      last[1] = "" -- the later unconditional one covers the earlier
+    else
+      merged[#merged + 1] = { cl[1], cl[2] }
+    end
+  end
+  local out = {}
+  for i, cl in ipairs(merged) do out[i] = cl[1] .. cl[2] end
+  return table.concat(out, ";")
 end
 
 -- True when we're outdoors, not mounted or in combat, and none of the mounts
@@ -509,6 +531,15 @@ function ns.NoMountHere(...)
   return sawMount
 end
 
+-- The mount you're riding right now, as an entry (nil if none found).
+function ns.ActiveMountEntry()
+  if not (C_MountJournal and C_MountJournal.GetMountIDs) then return end
+  for _, id in ipairs(C_MountJournal.GetMountIDs()) do
+    local _, _, _, isActive = C_MountJournal.GetMountInfoByID(id)
+    if isActive then return { kind = "mount", id = id } end
+  end
+end
+
 function ns.BuildBody()
   local clauses = {}
   local function add(c) if c then clauses[#clauses + 1] = c end end
@@ -516,9 +547,10 @@ function ns.BuildBody()
   local on = ns.IsEnabled
   -- Each /cast line starts with an empty "[mounted];" clause: when mounted it
   -- matches first and casts nothing, so no other clause needs "nomounted".
-  local COMBAT = "[combat][indoors]"
+  -- [form]: already in Ghost Wolf / Travel Form -> casting it again cancels it.
+  local COMBAT = "[form][combat][indoors]"
   local speed = on("combat") and (Pick(ns.Slots("combat")) or ns.ClassDefault("combat")) or nil
-  if speed then add(Clause(COMBAT, speed, true)) end
+  if speed then add(Clause(COMBAT, speed)) end
 
   for _, m in ipairs({ "shift", "ctrl", "alt" }) do
     if on(m) then add(Clause("[mod:" .. m .. "]", Pick(ns.Slots(m)))) end
@@ -546,7 +578,7 @@ function ns.BuildBody()
   ns.watch = { loc or false, fly or false, ground or false }
   ns.hasSpeed = speed and true or false
   if ns.noMountHere then
-    add(Clause("", speed, true))
+    add(Clause("", speed))
   elseif loc then
     add(Clause("", loc))
   elseif ground then
@@ -557,15 +589,24 @@ function ns.BuildBody()
     add(Clause("", fly))
   end
 
-  -- While flying: do nothing (no mid-air dismount). While mounted on the
-  -- ground: cast the usual pick, which dismounts you and gives the button a
-  -- real icon (an empty "[mounted];" would show a question mark).
-  local lines = {}
-  local default = loc or ground or fly
+  -- When something is already active, a click ends it:
+  --   in a vehicle: leave it (and cast nothing)
+  --   flying: nothing at all (no mid-air dismount)
+  --   mounted: cast the mount you're riding, which dismounts you (casting a
+  --     different mount would swap to it) and shows its icon
+  --   in a form (Ghost Wolf, Travel Form...): cast it again, which cancels it
+  local lines = { "/leavevehicle" }
+  local riding = IsMounted() and ns.ActiveMountEntry() or nil
+  local default = riding or loc or ground or fly
   local defaultName = default and ns.EntryInfo(default)
-  local head = defaultName and ("[flying];[mounted]" .. defaultName .. ";") or "[mounted];"
-  if not defaultName then lines[#lines + 1] = "/dismount [mounted,noflying]" end
-  if #clauses > 0 then lines[#lines + 1] = "/cast " .. head .. table.concat(clauses, ";") end
+  local head = "[flying];"
+  if defaultName then
+    table.insert(clauses, 1, { "[mounted]", defaultName })
+  else
+    head = head .. "[mounted];"
+    lines[#lines + 1] = "/dismount [mounted,noflying]"
+  end
+  if #clauses > 0 then lines[#lines + 1] = "/cast " .. head .. JoinClauses(clauses) end
 
 
   local preview = loc or (IsFlyableArea and IsFlyableArea() and fly) or ground or fly
@@ -690,7 +731,7 @@ ev:SetScript("OnEvent", function(_, event, arg1)
     if ns.pending then ns.Rebuild() end
     if ns.OnCombatEnd then ns.OnCombatEnd() end
   elseif event == "PLAYER_MOUNT_DISPLAY_CHANGED" then
-    if not IsMounted() then ns.QueueRebuild() end -- re-roll random picks
+    ns.QueueRebuild() -- mounted: learn the ridden mount; dismounted: re-roll random picks
   elseif event == "CVAR_UPDATE" then
     if arg1 == "ActionButtonUseKeyDown" then ns.QueueRebuild() end
   elseif event == "ZONE_CHANGED_NEW_AREA" or event == "ZONE_CHANGED"
