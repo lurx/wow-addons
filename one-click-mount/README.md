@@ -37,6 +37,14 @@ Created by Lurx.
 - Every rule has an on/off checkbox.
 - The settings window closes during combat and reopens afterwards.
 
+## FAQ
+
+**Q: Why can't I auto-cast an extra speed buff, like Crusader Aura or a second movement spell, together with the mount?**
+A: One click can only cast one spell that triggers the global cooldown. A second one would block or delay your mount or speed spell, so the button sticks to one.
+
+**Q: Will moving into or out of one of my zones dismount me?**
+A: No. Zone rules only change which mount the button picks, so the new mount is used the next time you mount. Special zones work the same way, with one catch: zone-locked mounts like the G-99 or the Qiraji tanks only work in their zone, so the game itself may dismount you when you leave it.
+
 ## Reporting a bug
 
 Open an issue with:
