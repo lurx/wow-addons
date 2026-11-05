@@ -1,5 +1,8 @@
 # Builds and publishes a One-Click Mount release whenever the version in
 # OneClickMount.toc changes on main (or when run by hand from the Actions tab).
+# Versions with a suffix, like 1.2.3-dev, are work in progress and are skipped.
+# Versioning: patch = fixes, minor = small features, major = overhauls or
+# Blizzard API changes.
 name: Release One-Click Mount
 
 on:
@@ -26,12 +29,15 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=one-click-mount-v$version" >> "$GITHUB_OUTPUT"
 
-      - name: Skip if this version is already released
+      - name: Skip dev builds and versions already released
         id: check
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view "${{ steps.v.outputs.tag }}" >/dev/null 2>&1; then
+          # Work in progress carries a suffix (1.2.3-dev): never release those.
+          if [[ "${{ steps.v.outputs.version }}" == *-* ]]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          elif gh release view "${{ steps.v.outputs.tag }}" >/dev/null 2>&1; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
