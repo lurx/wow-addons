@@ -542,6 +542,9 @@ function ns.BuildBody()
   -- there's no macro condition for that, so check whether the mounts we'd use
   -- are usable right here, and use the class speed spell instead if none are.
   ns.noMountHere = speed and ns.NoMountHere(loc, fly, ground) or false
+  -- What the watcher below re-tests (same test, same entries).
+  ns.watch = { loc or false, fly or false, ground or false }
+  ns.hasSpeed = speed and true or false
   if ns.noMountHere then
     add(Clause("", speed, true))
   elseif loc then
@@ -664,6 +667,7 @@ for _, name in ipairs({
   "TRAIT_CONFIG_UPDATED", "NEW_MOUNT_ADDED", "COMPANION_UPDATE",
   "PLAYER_MOUNT_DISPLAY_CHANGED", "ZONE_CHANGED_NEW_AREA", "ZONE_CHANGED",
   "ZONE_CHANGED_INDOORS", "CVAR_UPDATE", "PLAYER_CONTROL_GAINED",
+  "MOUNT_JOURNAL_USABILITY_CHANGED",
 }) do Reg(name) end
 
 local function MarkReady()
@@ -716,3 +720,17 @@ SlashCmdList.ONECLICKMOUNT = function(msg)
   end
   ns.Toggle()
 end
+
+---------------------------------------------------------------------------
+-- No-mount areas (the Trading Post, Lorewalking spots) are often invisible
+-- boundaries that fire no zone event. So, out of combat, check twice a second
+-- whether the mounts the button uses are still usable here, and rebuild
+-- only when that answer flips. Up to three lookups per tick, no collection scan.
+---------------------------------------------------------------------------
+C_Timer.NewTicker(0.5, function()
+  if not ns.macrosReady or not ns.hasSpeed or not ns.watch then return end
+  if InCombatLockdown() then return end
+  local w = ns.watch
+  local blocked = ns.NoMountHere(w[1] or nil, w[2] or nil, w[3] or nil) and true or false
+  if blocked ~= (ns.noMountHere and true or false) then ns.QueueRebuild() end
+end)

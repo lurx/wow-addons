@@ -1,7 +1,7 @@
 ## Interface: 120105, 120100, 120007, 120005, 120001, 120000, 16001
 ## Title: One-Click Mount
 ## Notes: One button for flying, ground, class speed spell and modifier mounts. /ocm to configure.
-## Version: 1.2.1
+## Version: 1.2.2
 ## Author: Lurx
 ## OptionalDeps: EllesmereUI
 ## SavedVariables: OneClickMountDB
