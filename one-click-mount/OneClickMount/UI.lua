@@ -783,6 +783,13 @@ local GENERAL = {
       return (e and ns.EntryInfo(e)) or "None for your class"
     end,
   }),
+  {
+    label = "Dismount while flying", hint = "Off: mid-air clicks do nothing", slots = 0,
+    list = function() return {} end,
+    isOn = function() return ns.AllowFlyingDismount() end,
+    setOn = function(v) ns.SetAllowFlyingDismount(v) end,
+    note = function() return ns.AllowFlyingDismount() and "Clicks drop you" or "" end,
+  },
   GeneralRow("shift", "Shift", "Vendor, passenger...", 4),
   GeneralRow("ctrl", "Ctrl", "Anything", 4),
   GeneralRow("alt", "Alt", "Anything", 4),
@@ -791,11 +798,11 @@ local GENERAL = {
 -- General page: Mounts and Modifiers cards. Returns the view and its height.
 local function BuildGeneral(parent)
   local v = { frame = parent, widgets = {} }
-  local mountsCard = CreateCard(parent, 0, 3, "Mounts")
+  local mountsCard = CreateCard(parent, 0, 4, "Mounts")
   local modsCard = CreateCard(parent, mountsCard.bottom - GAP, 3, "Modifiers")
   for r = 1, #GENERAL do
-    local card = (r <= 3) and mountsCard or modsCard
-    local k = (r <= 3) and r or (r - 3)
+    local card = (r <= 4) and mountsCard or modsCard
+    local k = (r <= 4) and r or (r - 4)
     v.widgets[r] = CreateRow(card, RowY(k), GENERAL[r].slots, false, k == 1)
   end
 

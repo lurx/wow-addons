@@ -68,6 +68,15 @@ local function RowDB(key)
   return ns.CHAR_ROWS[key] and OneClickMountCharDB or OneClickMountDB
 end
 
+-- Option: let a click dismount you while flying (off by default).
+function ns.AllowFlyingDismount()
+  return OneClickMountDB and OneClickMountDB.flyingDismount == true
+end
+
+function ns.SetAllowFlyingDismount(on)
+  OneClickMountDB.flyingDismount = on and true or false
+end
+
 function ns.IsEnabled(key)
   local db = RowDB(key)
   return not (db.disabled and db.disabled[key])
@@ -599,12 +608,15 @@ function ns.BuildBody()
   local riding = IsMounted() and ns.ActiveMountEntry() or nil
   local default = riding or loc or ground or fly
   local defaultName = default and ns.EntryInfo(default)
-  local head = "[flying];"
+  -- Mid-air clicks do nothing, unless the player allowed dismounting while
+  -- flying (glides, fall-damage achievements).
+  local airDrop = ns.AllowFlyingDismount()
+  local head = airDrop and "" or "[flying];"
   if defaultName then
     table.insert(clauses, 1, { "[mounted]", defaultName })
   else
     head = head .. "[mounted];"
-    lines[#lines + 1] = "/dismount [mounted,noflying]"
+    lines[#lines + 1] = airDrop and "/dismount [mounted]" or "/dismount [mounted,noflying]"
   end
   if #clauses > 0 then lines[#lines + 1] = "/cast " .. head .. JoinClauses(clauses) end
 
