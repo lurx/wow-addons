@@ -490,6 +490,25 @@ local function Clause(cond, e, bang)
   return cond .. (bang and "!" or "") .. name
 end
 
+-- True when we're outdoors, not mounted or in combat, and none of the mounts
+-- we'd pick can be summoned here. Only judged on real mounts; spells (G-99,
+-- Soar) and items are taken as usable.
+function ns.NoMountHere(...)
+  if InCombatLockdown() or IsMounted() or IsIndoors() then return false end
+  if IsSwimming and IsSwimming() then return false end
+  local sawMount = false
+  for i = 1, select("#", ...) do
+    local e = select(i, ...)
+    if e then
+      if e.kind ~= "mount" then return false end
+      local _, usableNow = ns.MountForChar(e.id)
+      if usableNow then return false end
+      sawMount = true
+    end
+  end
+  return sawMount
+end
+
 function ns.BuildBody()
   local clauses = {}
   local function add(c) if c then clauses[#clauses + 1] = c end end
@@ -498,9 +517,8 @@ function ns.BuildBody()
   -- Each /cast line starts with an empty "[mounted];" clause: when mounted it
   -- matches first and casts nothing, so no other clause needs "nomounted".
   local COMBAT = "[combat][indoors]"
-  if on("combat") then
-    add(Clause(COMBAT, Pick(ns.Slots("combat")) or ns.ClassDefault("combat"), true))
-  end
+  local speed = on("combat") and (Pick(ns.Slots("combat")) or ns.ClassDefault("combat")) or nil
+  if speed then add(Clause(COMBAT, speed, true)) end
 
   for _, m in ipairs({ "shift", "ctrl", "alt" }) do
     if on(m) then add(Clause("[mod:" .. m .. "]", Pick(ns.Slots(m)))) end
@@ -515,18 +533,25 @@ function ns.BuildBody()
   local loc, locKey = ns.LocationPick()
   ns.activeLocation = locKey
   local fly, ground
-  if loc then
-    add(Clause("", loc))
-  else
+  if not loc then
     fly = on("flying") and (Pick(ns.Slots("flying"), "flying") or RandomFavorite(true)) or nil
     ground = on("ground") and (Pick(ns.Slots("ground"), "ground") or RandomFavorite(false)) or nil
-    if ground then
-      add(Clause("[flyable]", fly))
-      add(Clause("", ground))
-    else
-      -- No ground rule: the flying mount is used everywhere (it runs on the ground too).
-      add(Clause("", fly))
-    end
+  end
+
+  -- Outdoors but no mounting allowed (the Trading Post, Lorewalking areas...):
+  -- there's no macro condition for that, so check whether the mounts we'd use
+  -- are usable right here, and use the class speed spell instead if none are.
+  ns.noMountHere = speed and ns.NoMountHere(loc, fly, ground) or false
+  if ns.noMountHere then
+    add(Clause("", speed, true))
+  elseif loc then
+    add(Clause("", loc))
+  elseif ground then
+    add(Clause("[flyable]", fly))
+    add(Clause("", ground))
+  else
+    -- No ground rule: the flying mount is used everywhere (it runs on the ground too).
+    add(Clause("", fly))
   end
 
   -- While flying: do nothing (no mid-air dismount). While mounted on the
@@ -638,7 +663,7 @@ for _, name in ipairs({
   "SPELLS_CHANGED", "PLAYER_SPECIALIZATION_CHANGED", "PLAYER_TALENT_UPDATE",
   "TRAIT_CONFIG_UPDATED", "NEW_MOUNT_ADDED", "COMPANION_UPDATE",
   "PLAYER_MOUNT_DISPLAY_CHANGED", "ZONE_CHANGED_NEW_AREA", "ZONE_CHANGED",
-  "ZONE_CHANGED_INDOORS", "CVAR_UPDATE",
+  "ZONE_CHANGED_INDOORS", "CVAR_UPDATE", "PLAYER_CONTROL_GAINED",
 }) do Reg(name) end
 
 local function MarkReady()
@@ -664,10 +689,12 @@ ev:SetScript("OnEvent", function(_, event, arg1)
     if not IsMounted() then ns.QueueRebuild() end -- re-roll random picks
   elseif event == "CVAR_UPDATE" then
     if arg1 == "ActionButtonUseKeyDown" then ns.QueueRebuild() end
-  elseif event == "ZONE_CHANGED_NEW_AREA" then
+  elseif event == "ZONE_CHANGED_NEW_AREA" or event == "ZONE_CHANGED"
+      or event == "ZONE_CHANGED_INDOORS" then
     ns.QueueRebuild()
-    -- Zone abilities (like the G-99) can show up a moment after arriving.
-    C_Timer.After(2, ns.QueueRebuild)
+    -- Zone abilities (like the G-99) and mount usability can update a moment
+    -- after arriving, so check again shortly.
+    C_Timer.After(1.5, ns.QueueRebuild)
   else
     ns.QueueRebuild()
   end
@@ -684,6 +711,7 @@ SlashCmdList.ONECLICKMOUNT = function(msg)
     print(("|cff66ccffOne-Click Mount macro|r (%d/%d chars%s):"):format(
       ns.lastLength or 0, MACRO_LIMIT, ns.usedClick and ", too long: using /click fallback" or ""))
     for line in (ns.lastBody or ""):gmatch("[^\n]+") do print("  " .. line) end
+    if ns.noMountHere then print("  (mounting looks blocked here: using your speed spell)") end
     return
   end
   ns.Toggle()

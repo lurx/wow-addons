@@ -14,6 +14,9 @@ local UNKNOWN_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 
 local function CardHeight(rows) return CARD_HEAD + rows * ROW_H + 4 end
 
+-- Everything an optional reskin (EllesmereUI) needs to reach.
+local skinCards, skinRows = {}, {}
+
 local function FromTemplate(kind, name, parent, template)
   local ok, frame = pcall(CreateFrame, kind, name, parent, template)
   return ok and frame or nil
@@ -132,6 +135,9 @@ local function SelectTab(i)
       if j == i then tab:LockHighlight() else tab:UnlockHighlight() end
     end
   end
+  if ns.euiSkin and ns.euiSkin.SetTabSelection then
+    for j, tab in ipairs(P.Tabs) do ns.euiSkin.SetTabSelection(tab, j == i) end
+  end
   if ns.RefreshUI then ns.RefreshUI() end
 end
 
@@ -194,6 +200,7 @@ local function CreateCard(page, y, rows, titleText)
   card.title:SetPoint("TOPLEFT", PAD, -14)
   card.title:SetText(titleText)
   card.bottom = y - CardHeight(rows)
+  skinCards[#skinCards + 1] = card
   return card
 end
 
@@ -514,6 +521,7 @@ local function CreateRow(parent, y, nSlots, removable, first)
     for _, b in ipairs(self.slots) do b:SetShown(shown) end
   end
 
+  skinRows[#skinRows + 1] = w
   return w
 end
 
@@ -854,4 +862,49 @@ if Settings and Settings.RegisterCanvasLayoutCategory then
   end)
   local category = Settings.RegisterCanvasLayoutCategory(cp, "One-Click Mount")
   Settings.RegisterAddOnCategory(category)
+end
+
+---------------------------------------------------------------------------
+-- Optional EllesmereUI skin. Uses EllesmereUI's public skinning API, so it
+-- follows the user's EUI theme, accent and font, and can be turned off in
+-- EllesmereUI's options (Blizzard Skins+ > Window Skins > Third-Party Addons).
+-- Without EllesmereUI this does nothing.
+---------------------------------------------------------------------------
+if EllesmereUI and EllesmereUI.RegisterSkin then
+  EllesmereUI.RegisterSkin(ADDON, function(S)
+    ns.euiSkin = S
+    S.Shell(P)
+    if P.CloseButton then S.CloseButton(P.CloseButton) end
+    for _, tab in ipairs(P.Tabs) do S.Tab(tab) end
+    if S.SetTabSelection then
+      for j, tab in ipairs(P.Tabs) do S.SetTabSelection(tab, j == currentTab) end
+    end
+
+    for _, card in ipairs(skinCards) do
+      if card.SetBackdrop then card:SetBackdrop(nil) end
+      S.Panel(card, { inset = true })
+      S.Font(card.title)
+    end
+
+    local function SkinSlot(b)
+      if b.rim then b.rim:SetAlpha(0) end
+      S.SquareIcon(b.icon, b)
+    end
+    for _, b in ipairs(allSlots) do SkinSlot(b) end
+    SkinSlot(out)
+
+    for _, w in ipairs(skinRows) do
+      S.Checkbox(w.check)
+      S.Font(w.label)
+      S.Font(w.hint)
+      S.Font(w.note)
+      if w.remove then S.CloseButton(w.remove) end
+    end
+
+    S.Button(addBtn)
+    S.WhiteButtonLabel(addBtn)
+    for _, fs in ipairs({ heading, sub, outLabel, modsHint, help, emptyCustom, status, credit }) do
+      S.Font(fs)
+    end
+  end)
 end
