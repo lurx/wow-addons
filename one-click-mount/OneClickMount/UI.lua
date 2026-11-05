@@ -24,16 +24,28 @@ local skinCards, skinRows = {}, {}
 -- the user picked from its list) can be re-applied to all of them whenever one
 -- of our pages opens. Without EllesmereUI, nothing is touched: Blizzard fonts.
 local fonts = {}
+
+-- The user's global EllesmereUI font. (The skin API's S.Font uses the font
+-- of EllesmereUI's Blizzard-skin module, which can differ from the global one.)
+local function EUIFont(fs)
+  local S = ns.euiSkin
+  if not S or not fs or not fs.GetFont then return end
+  local path = EllesmereUI and EllesmereUI.GetFontPath and EllesmereUI.GetFontPath()
+  if not path then S.Font(fs) return end
+  local _, size = fs:GetFont()
+  local _, flag = S.GetFont()
+  fs:SetFont(path, size or 12, flag or "")
+end
+
 local function SkinText(fs)
   if not fs then return end
   if not fonts[fs] then fonts[fs] = true; fonts[#fonts + 1] = fs end
-  if ns.euiSkin then ns.euiSkin.Font(fs) end
+  EUIFont(fs)
 end
 
 local function ApplyFonts()
-  local S = ns.euiSkin
-  if not S then return end
-  for i = 1, #fonts do S.Font(fonts[i]) end
+  if not ns.euiSkin then return end
+  for i = 1, #fonts do EUIFont(fonts[i]) end
 end
 
 local function SkinCard(card)
@@ -42,7 +54,7 @@ local function SkinCard(card)
   card.euiSkinned = true
   if card.SetBackdrop then card:SetBackdrop(nil) end
   S.Panel(card, { inset = true })
-  S.Font(card.title)
+  SkinText(card.title)
 end
 
 local function SkinIconSlot(b)
@@ -98,9 +110,9 @@ local function SkinRowWidgets(w)
   w.label:ClearAllPoints()
   w.label:SetPoint("BOTTOMLEFT", w.parent, "TOPLEFT", 16 + 38, w.mid + 1)
   w.label:SetWidth(112)
-  S.Font(w.label)
-  S.Font(w.hint)
-  S.Font(w.note)
+  SkinText(w.label)
+  SkinText(w.hint)
+  SkinText(w.note)
   if w.remove then S.CloseButton(w.remove) end
 end
 
@@ -1061,12 +1073,12 @@ end
 local function BuildEUIHeader(header, width)
   local h = {}
   local btn = MakeDragButton(header, 32)
-  btn:SetPoint("RIGHT", header, "RIGHT", -16, 0)
+  btn:SetPoint("RIGHT", header, "RIGHT", -4, 0)
   local label = header:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
   label:SetPoint("RIGHT", btn, "LEFT", -8, 0)
   label:SetText("Drag to your bar")
   local who = header:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-  who:SetPoint("LEFT", header, "LEFT", 16, 0)
+  who:SetPoint("LEFT", header, "LEFT", 4, 0)
   local st = header:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
   st:SetPoint("LEFT", who, "RIGHT", 12, -1)
   for _, fs in ipairs({ label, who, st }) do SkinText(fs) end
@@ -1097,14 +1109,24 @@ if EllesmereUI and EllesmereUI.RegisterPlugin then
           local holder = CreateFrame("Frame", nil, parent)
           holder:SetPoint("TOPLEFT", parent, "TOPLEFT", 12, yOffset - 8)
           holder:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -12, yOffset - 8)
-          local _, height = builders[pageName](holder)
+          -- Top bar: who you are, status, and the drag-to-bar button.
+          local bar = CreateFrame("Frame", nil, holder)
+          bar:SetPoint("TOPLEFT")
+          bar:SetPoint("TOPRIGHT")
+          bar:SetHeight(44)
+          local barH = BuildEUIHeader(bar)
+          local body = CreateFrame("Frame", nil, holder)
+          body:SetPoint("TOPLEFT", 0, -barH)
+          body:SetPoint("TOPRIGHT", 0, -barH)
+          local _, height = builders[pageName](body)
+          body:SetHeight(height)
+          height = height + barH
           holder:SetHeight(height)
           holder:HookScript("OnShow", function() ApplyFonts(); ns.Rebuild(); ns.RefreshUI() end)
           ns.Rebuild()
           ns.RefreshUI()
           return math.abs(yOffset) + 8 + height
         end,
-        getHeaderBuilder = function() return BuildEUIHeader end,
         onPageCacheRestore = function() ApplyFonts(); ns.Rebuild(); ns.RefreshUI() end,
       },
     },
