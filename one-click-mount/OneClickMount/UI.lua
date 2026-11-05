@@ -20,8 +20,20 @@ local skinCards, skinRows = {}, {}
 -- Skin helpers: no-ops until EllesmereUI hands us its skinning facade
 -- (ns.euiSkin). Called at creation time too, so pages built later (like
 -- EllesmereUI's own options pages, built when first opened) get skinned.
+-- Every FontString we create is listed here, so EllesmereUI's font (whatever
+-- the user picked from its list) can be re-applied to all of them whenever one
+-- of our pages opens. Without EllesmereUI, nothing is touched: Blizzard fonts.
+local fonts = {}
 local function SkinText(fs)
-  if ns.euiSkin and fs then ns.euiSkin.Font(fs) end
+  if not fs then return end
+  if not fonts[fs] then fonts[fs] = true; fonts[#fonts + 1] = fs end
+  if ns.euiSkin then ns.euiSkin.Font(fs) end
+end
+
+local function ApplyFonts()
+  local S = ns.euiSkin
+  if not S then return end
+  for i = 1, #fonts do S.Font(fonts[i]) end
 end
 
 local function SkinCard(card)
@@ -125,6 +137,7 @@ if not P.titleText then
   P.titleText:SetPoint("TOP", 0, -6)
 end
 P.titleText:SetText("One-Click Mount")
+SkinText(P.titleText)
 
 P:SetSize(WIDTH, HEIGHT)
 P:SetPoint("CENTER")
@@ -146,6 +159,8 @@ heading:SetPoint("TOPLEFT", 68, -33)
 local sub = P:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
 sub:SetPoint("LEFT", heading, "RIGHT", 10, -1)
 sub:SetTextColor(0.65, 0.65, 0.65)
+SkinText(heading)
+SkinText(sub)
 
 ---------------------------------------------------------------------------
 -- Icon slot look (black back, icon, profession-window rim)
@@ -199,6 +214,7 @@ out:SetPoint("TOPRIGHT", -EDGE - 4, -27)
 local outLabel = P:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
 outLabel:SetPoint("RIGHT", out, "LEFT", -8, 0)
 outLabel:SetText("Drag to your bar")
+SkinText(outLabel)
 
 ---------------------------------------------------------------------------
 -- Tabs: Blizzard's top tabs, inside the window, sitting on the cards
@@ -230,6 +246,7 @@ local function TopTab(i, name)
     or CreateFrame("Button", tabName, P, "UIPanelButtonTemplate")
   tab:SetID(i)
   tab:SetText(name)
+  SkinText(tab:GetFontString())
   if PanelTemplates_TabResize then pcall(PanelTemplates_TabResize, tab, 15, nil, 90) end
   tab:SetScript("OnClick", function()
     PlaySound(SOUNDKIT.IG_CHARACTER_INFO_TAB)
@@ -281,6 +298,7 @@ local function CreateCard(page, y, rows, titleText)
   card.title = card:CreateFontString(nil, "ARTWORK", "GameFontNormal")
   card.title:SetPoint("TOPLEFT", PAD, -14)
   card.title:SetText(titleText)
+  SkinText(card.title)
   card.bottom = y - CardHeight(rows)
   skinCards[#skinCards + 1] = card
   SkinCard(card)
@@ -480,6 +498,8 @@ local function CreateSlot(w, index, x, y)
   b.plus:SetText("+")
 
   b.tag = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  SkinText(b.plus)
+  SkinText(b.tag)
   b.tag:SetPoint("BOTTOM", 0, 2)
 
   b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
@@ -616,6 +636,9 @@ local function CreateRow(parent, y, nSlots, removable, first)
   end
 
   skinRows[#skinRows + 1] = w
+  SkinText(w.label)
+  SkinText(w.hint)
+  SkinText(w.note)
   SkinRowWidgets(w)
   return w
 end
@@ -858,6 +881,7 @@ local function BuildLocations(parent)
   end)
   addBtn:SetScript("OnLeave", GameTooltip_Hide)
   SkinButton(addBtn)
+  SkinText(addBtn:GetFontString())
   v.addBtn = addBtn
 
   for i = 1, ns.MAX_CUSTOM do
@@ -900,11 +924,13 @@ BuildLocations(pages[2])
 ---------------------------------------------------------------------------
 local status = P:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
 status:SetPoint("BOTTOMLEFT", EDGE + 4, 10)
+SkinText(status)
 
 -- Footer credit, bottom right (like Lueur's version line).
 local credit = P:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
 credit:SetPoint("BOTTOMRIGHT", -EDGE - 4, 10)
 credit:SetTextColor(0.55, 0.55, 0.55)
+SkinText(credit)
 do
   local getMeta = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata
   local version = getMeta and getMeta(ADDON, "Version")
@@ -940,7 +966,7 @@ function ns.RefreshUI()
   RefreshViews()
 end
 
-P:SetScript("OnShow", function() SelectTab(currentTab); ns.Rebuild(); ns.RefreshUI() end)
+P:SetScript("OnShow", function() ApplyFonts(); SelectTab(currentTab); ns.Rebuild(); ns.RefreshUI() end)
 P:HookScript("OnHide", EndDrag)
 
 ---------------------------------------------------------------------------
@@ -1017,7 +1043,7 @@ if EllesmereUI and EllesmereUI.RegisterSkin then
       SkinText(v.help)
       SkinText(v.empty)
     end
-    for _, fs in ipairs({ heading, sub, outLabel, status, credit }) do S.Font(fs) end
+    ApplyFonts()
 
     -- Keep our switches in step with live accent colour changes.
     S.OnLooksChanged(function()
@@ -1073,13 +1099,13 @@ if EllesmereUI and EllesmereUI.RegisterPlugin then
           holder:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -12, yOffset - 8)
           local _, height = builders[pageName](holder)
           holder:SetHeight(height)
-          holder:HookScript("OnShow", function() ns.Rebuild(); ns.RefreshUI() end)
+          holder:HookScript("OnShow", function() ApplyFonts(); ns.Rebuild(); ns.RefreshUI() end)
           ns.Rebuild()
           ns.RefreshUI()
           return math.abs(yOffset) + 8 + height
         end,
         getHeaderBuilder = function() return BuildEUIHeader end,
-        onPageCacheRestore = function() ns.Rebuild(); ns.RefreshUI() end,
+        onPageCacheRestore = function() ApplyFonts(); ns.Rebuild(); ns.RefreshUI() end,
       },
     },
   })
