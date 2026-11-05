@@ -1,4 +1,4 @@
-One-Click Mount (test build 1.2.2, Retail)
+One-Click Mount (test build 1.3.0, Retail)
 =========================================
 
 One action bar button that picks the right mount or movement spell for where you are.

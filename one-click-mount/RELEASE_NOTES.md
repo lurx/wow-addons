@@ -2,10 +2,16 @@ Test build of One-Click Mount for WoW Retail (Midnight).
 
 **Install:** download `OneClickMount-<version>.zip` below, unzip, and put the `OneClickMount` folder in `World of Warcraft/_retail_/Interface/AddOns/`. Then type `/ocm`, drag your mounts into the rows, and drag the icon at the top right onto your action bar.
 
-**New in 1.2.x**
-- Optional EllesmereUI skin: matches your EllesmereUI theme, accent and font (toggle it in EllesmereUI's Third-Party Addons list).
+**New in 1.3.0**
+- EllesmereUI users get a One-Click Mount section in EllesmereUI's own options panel, with the same General and Locations pages and a drag-to-bar button (`/ocm eui` opens it).
+- With EllesmereUI, every rule uses an EllesmereUI-style switch in your accent colour, and all text follows your EllesmereUI Global Font (live).
+- New icon.
+- `/ocm font` prints font details for troubleshooting.
+
+**Since 1.2**
+- Optional EllesmereUI skin for the One-Click Mount window.
 - Outdoors but mounting not allowed (Trading Post, Lorewalking areas): the button switches to your class speed spell, and back when you leave.
-- Mounted on the ground, the button shows your mount and dismounts you; no more question mark.
+- Mounted on the ground, the button shows your mount and dismounts you.
 - "Summon Random Favorite Mount" works in the Flying and Ground rows.
 
 **Highlights**
