@@ -983,6 +983,74 @@ BuildGeneral(pages[1])
 BuildLocations(pages[2])
 
 ---------------------------------------------------------------------------
+-- Settings switcher: "Shared" or "<Name> only" (name in class colour)
+---------------------------------------------------------------------------
+local function ClassColoredName()
+  local name = UnitName("player") or "?"
+  local _, class = UnitClass("player")
+  local color = class and C_ClassColor and C_ClassColor.GetClassColor and C_ClassColor.GetClassColor(class)
+  if color then return color:WrapTextInColorCode(name) end
+  local c = class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]
+  if c and c.colorStr then return "|c" .. c.colorStr .. name .. "|r" end
+  return name
+end
+
+local function SetOwnSettings(on)
+  if InCombatLockdown() then return end
+  if on == ns.UsesOwnSettings() then return end
+  ns.SetUseOwnSettings(on)
+  Changed()
+end
+
+local switchers = {}
+local function MakeSettingsSwitcher(parent)
+  local dd = FromTemplate("DropdownButton", nil, parent, "WowStyle1DropdownTemplate")
+  if dd and dd.SetupMenu then
+    dd:SetWidth(160)
+    dd:SetupMenu(function(_, root)
+      root:CreateRadio("Shared",
+        function() return not ns.UsesOwnSettings() end,
+        function() SetOwnSettings(false) end)
+      root:CreateRadio(ClassColoredName() .. " only",
+        function() return ns.UsesOwnSettings() end,
+        function() SetOwnSettings(true) end)
+    end)
+    function dd:RefreshSwitch() self:GenerateMenu() end
+  else
+    if dd then dd:Hide() end
+    dd = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    dd:SetSize(160, 22)
+    dd:SetScript("OnClick", function() SetOwnSettings(not ns.UsesOwnSettings()) end)
+    function dd:RefreshSwitch()
+      self:SetText(ns.UsesOwnSettings() and (ClassColoredName() .. " only") or "Shared")
+    end
+  end
+  dd:HookScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+    GameTooltip:AddLine("Whose settings")
+    GameTooltip:AddLine("Shared: every character uses the same setup.", 1, 1, 1, true)
+    GameTooltip:AddLine(ClassColoredName() .. " only: this character keeps its own copy, starting from the shared setup.", 1, 1, 1, true)
+    GameTooltip:AddLine("Combat / indoors is always per character.", 0.7, 0.7, 0.7, true)
+    GameTooltip:Show()
+  end)
+  dd:HookScript("OnLeave", GameTooltip_Hide)
+  if ns.euiSkin then
+    if dd.SetupMenu then ns.euiSkin.Dropdown(dd) else SkinButton(dd) end
+  end
+  dd:RefreshSwitch()
+  switchers[#switchers + 1] = dd
+  return dd
+end
+
+-- Our window: top right, above the tabs.
+local ourSwitch = MakeSettingsSwitcher(P)
+ourSwitch:SetPoint("TOPRIGHT", P, "TOPRIGHT", -EDGE - 4, -64)
+local switchLabel = P:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+switchLabel:SetPoint("RIGHT", ourSwitch, "LEFT", -8, 0)
+switchLabel:SetText("Settings")
+SkinText(switchLabel)
+
+---------------------------------------------------------------------------
 -- Status and refresh
 ---------------------------------------------------------------------------
 local status = P:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
@@ -1026,6 +1094,7 @@ function ns.RefreshUI()
     ns.UpdateStatus()
   end
   for _, h in ipairs(headers) do h:Refresh() end
+  for _, dd in ipairs(switchers) do dd:RefreshSwitch() end
   RefreshViews()
 end
 
@@ -1100,6 +1169,9 @@ if EllesmereUI and EllesmereUI.RegisterSkin then
     for _, b in ipairs(allSlots) do SkinIconSlot(b) end
     SkinIconSlot(out)
     for _, w in ipairs(skinRows) do SkinRowWidgets(w) end
+    for _, dd in ipairs(switchers) do
+      if dd.SetupMenu then S.Dropdown(dd) else SkinButton(dd) end
+    end
     for _, v in ipairs(views) do
       SkinButton(v.addBtn)
       SkinText(v.modsHint)
@@ -1128,6 +1200,8 @@ local function BuildEUIHeader(header, width)
   local label = header:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
   label:SetPoint("RIGHT", btn, "LEFT", -8, 0)
   label:SetText("Drag to your bar")
+  local dd = MakeSettingsSwitcher(header)
+  dd:SetPoint("RIGHT", label, "LEFT", -16, 0)
   local who = header:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
   who:SetPoint("LEFT", header, "LEFT", 4, 0)
   local st = header:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")

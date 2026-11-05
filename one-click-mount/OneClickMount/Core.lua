@@ -57,24 +57,62 @@ ns.CHAR_ROWS = { combat = true }
 ---------------------------------------------------------------------------
 -- Saved data
 ---------------------------------------------------------------------------
+-- Where settings live. Shared (account-wide) by default; a character can
+-- switch to its own copy ("<Name> only"). Combat / indoors is always per
+-- character, since it depends on class.
+local function DeepCopy(t)
+  if type(t) ~= "table" then return t end
+  local out = {}
+  for k, v in pairs(t) do out[k] = DeepCopy(v) end
+  return out
+end
+
+function ns.UsesOwnSettings()
+  return OneClickMountCharDB and OneClickMountCharDB.useOwn == true
+end
+
+-- The settings table in use for this character (shared or its own).
+function ns.Store()
+  if ns.UsesOwnSettings() then
+    OneClickMountCharDB.own = OneClickMountCharDB.own or {}
+    return OneClickMountCharDB.own
+  end
+  return OneClickMountDB
+end
+
+-- Switch this character between shared settings and its own copy. The first
+-- switch copies the shared setup; later switches keep the existing copy.
+function ns.SetUseOwnSettings(on)
+  if on and not OneClickMountCharDB.own then
+    local shared = OneClickMountDB
+    OneClickMountCharDB.own = {
+      slots = DeepCopy(shared.slots),
+      disabled = DeepCopy(shared.disabled),
+      locations = DeepCopy(shared.locations),
+      flyingDismount = shared.flyingDismount,
+    }
+  end
+  OneClickMountCharDB.useOwn = on and true or false
+end
+
 function ns.Slots(key)
-  local db = ns.CHAR_ROWS[key] and OneClickMountCharDB or OneClickMountDB
+  local db = ns.CHAR_ROWS[key] and OneClickMountCharDB or ns.Store()
   db.slots = db.slots or {}
   db.slots[key] = db.slots[key] or {}
   return db.slots[key]
 end
 
 local function RowDB(key)
-  return ns.CHAR_ROWS[key] and OneClickMountCharDB or OneClickMountDB
+  return ns.CHAR_ROWS[key] and OneClickMountCharDB or ns.Store()
 end
 
 -- Option: let a click dismount you while flying (off by default).
 function ns.AllowFlyingDismount()
-  return OneClickMountDB and OneClickMountDB.flyingDismount == true
+  return OneClickMountDB and ns.Store().flyingDismount == true
 end
 
 function ns.SetAllowFlyingDismount(on)
-  OneClickMountDB.flyingDismount = on and true or false
+  ns.Store().flyingDismount = on and true or false
 end
 
 function ns.IsEnabled(key)
@@ -320,8 +358,9 @@ end
 -- Locations
 ---------------------------------------------------------------------------
 function ns.LocDB()
-  OneClickMountDB.locations = OneClickMountDB.locations or {}
-  local L = OneClickMountDB.locations
+  local store = ns.Store()
+  store.locations = store.locations or {}
+  local L = store.locations
   L.presets = L.presets or {}
   L.presets.aq = L.presets.aq or { enabled = true, slots = {} }
   L.presets.aq.slots = L.presets.aq.slots or {}
