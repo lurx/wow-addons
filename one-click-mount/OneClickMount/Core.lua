@@ -20,6 +20,8 @@ local GROUND_TYPES = {
 }
 -- Spells allowed in the Flying row: Soar, Travel Form.
 local FLIGHT_SPELLS = { [369536] = true, [783] = true }
+-- Speed spells that are shapeshift forms (a second cast cancels them).
+local FORM_SPELLS = { [2645] = true, [783] = true } -- Ghost Wolf, Travel Form
 
 -- Location presets
 local QIRAJI_TYPE = 241       -- Qiraji battle tanks
@@ -595,9 +597,14 @@ function ns.BuildBody()
   local on = ns.IsEnabled
   -- Each /cast line starts with an empty "[mounted];" clause: when mounted it
   -- matches first and casts nothing, so no other clause needs "nomounted".
-  -- [form]: already in Ghost Wolf / Travel Form -> casting it again cancels it.
-  local COMBAT = "[form][combat][indoors]"
   local speed = on("combat") and (Pick(ns.Slots("combat")) or ns.ClassDefault("combat")) or nil
+  -- [form]: already in Ghost Wolf / Travel Form -> casting it again cancels it.
+  -- Only for spells that ARE forms: Paladin auras, Warrior stances, Shadowform
+  -- etc. also count as [form], and would make the speed spell fire everywhere.
+  local COMBAT = "[combat][indoors]"
+  if speed and speed.kind == "spell" and FORM_SPELLS[speed.id] then
+    COMBAT = "[form][combat][indoors]"
+  end
   if speed then add(Clause(COMBAT, speed)) end
 
   for _, m in ipairs({ "shift", "ctrl", "alt" }) do
