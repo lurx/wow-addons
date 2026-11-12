@@ -608,6 +608,26 @@ function ns.ActiveMountEntry()
   end
 end
 
+-- Can this character ride yet? A known riding skill spell, or (for games
+-- whose riding works differently) any collected mount being usable outdoors.
+-- Once true it stays true for the session.
+local RIDING_SPELLS = { 33388, 33391, 34090, 34091, 90265 } -- Apprentice .. Master Riding
+local canRide = false
+function ns.CanRide()
+  if canRide then return true end
+  for _, id in ipairs(RIDING_SPELLS) do
+    if IsPlayerSpell and IsPlayerSpell(id) then canRide = true return true end
+  end
+  if C_MountJournal and C_MountJournal.GetMountIDs and not IsIndoors()
+      and not InCombatLockdown() and not IsMounted() then
+    for _, id in ipairs(C_MountJournal.GetMountIDs()) do
+      local name, _, _, _, isUsable, _, _, _, _, hide, collected = C_MountJournal.GetMountInfoByID(id)
+      if name and collected and not hide and isUsable then canRide = true return true end
+    end
+  end
+  return false
+end
+
 function ns.BuildBody()
   local clauses = {}
   local function add(c) if c then clauses[#clauses + 1] = c end end
@@ -638,9 +658,10 @@ function ns.BuildBody()
   local loc, locKey = ns.LocationPick()
   ns.activeLocation = locKey
   local fly, ground
-  if not loc then
+  local riding = ns.CanRide()
+  if not loc and riding then
     fly = ns.HAS_FLYING and on("flying") and (Pick(ns.Slots("flying"), "flying") or RandomFavorite(true)) or nil
-    ground = on("ground") and (Pick(ns.Slots("ground"), "ground") or RandomFavorite(false)) or nil
+    ground = riding and on("ground") and (Pick(ns.Slots("ground"), "ground") or RandomFavorite(false)) or nil
   end
 
   -- Outdoors but no mounting allowed (the Trading Post, Lorewalking areas...):

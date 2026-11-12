@@ -597,7 +597,7 @@ local function CreateRow(parent, y, nSlots, removable, first, compact)
 
   -- Flip this row's rule (used by the EllesmereUI switch).
   function w.Toggle()
-    if InCombatLockdown() or not w.row then return end
+    if InCombatLockdown() or not w.row or (w.row.needsRiding and not ns.CanRide()) then return end
     local on = not w.row.isOn()
     PlaySound(on and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON or SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF)
     w.row.setOn(on)
@@ -617,7 +617,7 @@ local function CreateRow(parent, y, nSlots, removable, first, compact)
   w.check:SetSize(compact and 20 or 26, compact and 20 or 26)
   w.check:SetPoint("LEFT", parent, "TOPLEFT", PAD - 4 + indent, mid)
   w.check:SetScript("OnClick", function(self)
-    if InCombatLockdown() or not w.row then
+    if InCombatLockdown() or not w.row or (w.row.needsRiding and not ns.CanRide()) then
       self:SetChecked(not self:GetChecked())
       return
     end
@@ -737,7 +737,13 @@ local function RefreshRow(w, row, active)
     b:SetShown(i <= #list + 1)
   end
 
-  local enabled = row.isOn()
+  local locked = row.needsRiding and not ns.CanRide()
+  local enabled = row.isOn() and not locked
+  w.check:SetEnabled(not locked)
+  if w.switch then
+    w.switch:EnableMouse(not locked)
+    w.switch:SetAlpha(locked and 0.4 or 1)
+  end
   local note = row.note and row.note(list, auto) or ""
   w.check:SetChecked(enabled)
   if w.switch then w.switch:SetChecked(enabled) end
@@ -745,7 +751,7 @@ local function RefreshRow(w, row, active)
   w.hint:SetText(active and "|cff40ff40Active here|r" or row.hint)
   if not enabled then
     w.label:SetTextColor(0.5, 0.5, 0.5)
-    note = "Off"
+    note = locked and "Can't ride yet" or "Off"
   elseif active then
     w.label:SetTextColor(0.25, 1, 0.25)
   else
@@ -814,6 +820,11 @@ local GENERAL = {
 
 -- Which card each row sits in.
 for i, row in ipairs(GENERAL) do row.group = (i <= 4) and "mounts" or "mods" end
+-- Flying, its sub-row and Ground are locked off until the character can ride.
+for _, row in ipairs(GENERAL) do
+  if row.acceptKey == "flying" or row.acceptKey == "ground" or row.compact then row.needsRiding = true end
+end
+
 
 -- No flying (Forever, Classic Era): drop Flying and its sub-row, and Ground
 -- becomes the one mount row, used everywhere.
