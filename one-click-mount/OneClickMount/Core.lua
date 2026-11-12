@@ -678,9 +678,13 @@ function ns.BuildBody()
   elseif ground then
     add(Clause("[flyable]", fly))
     add(Clause("", ground))
-  else
+  elseif fly then
     -- No ground rule: the flying mount is used everywhere (it runs on the ground too).
     add(Clause("", fly))
+  elseif speed then
+    -- No mount at all (can't ride yet, or every mount row is off/empty): the
+    -- speed spell is what the button does, and what its icon shows.
+    add(Clause("", speed))
   end
 
   -- When something is already active, a click ends it:
@@ -706,7 +710,7 @@ function ns.BuildBody()
   if #clauses > 0 then lines[#lines + 1] = "/cast " .. head .. JoinClauses(clauses) end
 
 
-  local preview = loc or (IsFlyableArea and IsFlyableArea() and fly) or ground or fly
+  local preview = loc or (IsFlyableArea and IsFlyableArea() and fly) or ground or fly or speed
   local _, icon = ns.EntryInfo(preview)
   return table.concat(lines, "\n"), icon
 end
