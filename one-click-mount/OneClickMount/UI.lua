@@ -158,7 +158,8 @@ end
 ---------------------------------------------------------------------------
 -- Window: the game's portrait frame
 ---------------------------------------------------------------------------
-local LOC_HEIGHT = CardHeight(3) + GAP + CardHeight(ns.MAX_CUSTOM)
+local N_PRESETS = ns.CLASSIC_RULES and 1 or 3 -- Forever/Classic: Ahn'Qiraj only
+local LOC_HEIGHT = CardHeight(N_PRESETS) + GAP + CardHeight(ns.MAX_CUSTOM)
 local HEIGHT = TOP + LOC_HEIGHT + FOOT
 
 local P = FromTemplate("Frame", "OneClickMountPanel", UIParent, "PortraitFrameTemplate")
@@ -811,19 +812,44 @@ local GENERAL = {
   GeneralRow("alt", "Alt", "Anything", 4),
 }
 
+-- Which card each row sits in.
+for i, row in ipairs(GENERAL) do row.group = (i <= 4) and "mounts" or "mods" end
+
+-- No flying (Forever, Classic Era): drop Flying and its sub-row, and Ground
+-- becomes the one mount row, used everywhere.
+if not ns.HAS_FLYING then
+  for i = #GENERAL, 1, -1 do
+    local row = GENERAL[i]
+    if row.acceptKey == "flying" or row.compact then table.remove(GENERAL, i) end
+  end
+  for _, row in ipairs(GENERAL) do
+    if row.acceptKey == "ground" then
+      row.label, row.hint = "Mount", "Everywhere"
+      row.emptyHint = "Drop a mount here, from the Mount Journal or your bags."
+    end
+  end
+end
+
 -- General page: Mounts and Modifiers cards. Returns the view and its height.
 local function BuildGeneral(parent)
   local v = { frame = parent, widgets = {} }
-  -- Mounts: Flying, its "Dismount while flying" sub-row, Ground, Combat.
-  local mountsCard = CreateCard(parent, 0, 3, "Mounts", SUB_H)
-  local modsCard = CreateCard(parent, mountsCard.bottom - GAP, 3, "Modifiers")
-  local y = -CARD_HEAD
+  -- Mounts card: Flying (+ its sub-row), Ground, Combat; Modifiers card: Shift/Ctrl/Alt.
+  local full, compact, mods = 0, 0, 0
+  for _, row in ipairs(GENERAL) do
+    if row.group == "mods" then mods = mods + 1
+    elseif row.compact then compact = compact + 1
+    else full = full + 1 end
+  end
+  local mountsCard = CreateCard(parent, 0, full, "Mounts", compact * SUB_H)
+  local modsCard = CreateCard(parent, mountsCard.bottom - GAP, mods, "Modifiers")
+  local y, firstIn = -CARD_HEAD, { mounts = true, mods = true }
+  local lastGroup
   for r = 1, #GENERAL do
     local row = GENERAL[r]
-    local inMounts = r <= 4
-    local card = inMounts and mountsCard or modsCard
-    if r == 5 then y = -CARD_HEAD end
-    local first = (r == 1 or r == 5)
+    local card = (row.group == "mods") and modsCard or mountsCard
+    if row.group ~= lastGroup then y = -CARD_HEAD; lastGroup = row.group end
+    local first = firstIn[row.group]
+    firstIn[row.group] = false
     v.widgets[r] = CreateRow(card, y, row.slots, false, first, row.compact)
     y = y - (row.compact and SUB_H or ROW_H)
   end
@@ -887,6 +913,14 @@ local PRESETS = {
     note = PoolNote("Empty: seahorse first"),
   }),
 }
+
+-- Forever / Classic Era have no Undermine or Vashj'ir.
+if ns.CLASSIC_RULES then
+  for i = #PRESETS, 1, -1 do
+    if PRESETS[i].locKey ~= "aq" then table.remove(PRESETS, i) end
+  end
+  PRESETS[1].emptyHint = "Drop a Qiraji battle tank here, from the Mount Journal or your bags."
+end
 
 local function CustomRow(i, rule)
   return {
@@ -1089,7 +1123,7 @@ end
 function ns.RefreshUI()
   if P:IsShown() then
     heading:SetText(HeadingText())
-    sub:SetText((select(4, GetBuildInfo()) < 100000) and "Forever" or "Retail")
+    sub:SetText(ns.GAME or "")
     out.icon:SetTexture(ns.previewIcon or ICON)
     ns.UpdateStatus()
   end

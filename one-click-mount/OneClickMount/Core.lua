@@ -6,6 +6,16 @@ local MACRO_LIMIT = 255
 
 ns.MACRO_NAME = MACRO_NAME
 
+-- Which game we're in. Forever (1.6x) and Classic Era (1.15) have no flying,
+-- and no Undermine or Vashj'ir; mounts may be bag items there.
+local INTERFACE = select(4, GetBuildInfo())
+ns.CLASSIC_RULES = INTERFACE < 20000
+ns.HAS_FLYING = not ns.CLASSIC_RULES
+if INTERFACE >= 100000 then ns.GAME = "Retail"
+elseif INTERFACE >= 16000 and INTERFACE < 20000 then ns.GAME = "Forever"
+elseif INTERFACE < 20000 then ns.GAME = "Classic Era"
+else ns.GAME = "Classic" end
+
 
 -- Mount type IDs that can fly (steady flight and skyriding variants).
 local FLYING_TYPES = {
@@ -247,6 +257,9 @@ function ns.IsQirajiTank(id)
 end
 
 function ns.Accepts(rowKey, e)
+  if rowKey == "loc:aq" and ns.CLASSIC_RULES and e.kind == "item" then
+    return true -- tanks can be bag items (Qiraji Resonating Crystals) there
+  end
   if rowKey == "loc:aq" then
     if e.kind == "mount" and ns.IsQirajiTank(e.id) then return true end
     return false, "Only Qiraji battle tanks (and the Black Qiraji) work in AQ."
@@ -273,6 +286,9 @@ function ns.Accepts(rowKey, e)
   end
   if rowKey ~= "flying" and rowKey ~= "ground" then return true end
   if e.kind == "randomfav" then return true end
+  if rowKey == "ground" and ns.CLASSIC_RULES and e.kind == "item" then
+    return true -- mounts can be bag items there
+  end
   if e.kind == "mount" then
     local cat, typeID = ns.MountCategory(e.id)
     if cat == rowKey then return true end
@@ -483,7 +499,7 @@ end
 -- Swimming-only pick (Vashj'ir). Doesn't replace your normal rules on land.
 function ns.SwimPick()
   local L = ns.LocDB()
-  if not L.presets.vashjir.enabled or not InVashjir(MapChain()) then return end
+  if ns.CLASSIC_RULES or not L.presets.vashjir.enabled or not InVashjir(MapChain()) then return end
   return Pick(L.presets.vashjir.slots, "loc:vashjir") or RandomAquatic()
 end
 
@@ -497,7 +513,7 @@ function ns.LocationPick()
     if e then return e, "aq" end
   end
   local chain = MapChain()
-  if L.presets.undermine.enabled and (ns.G99Active() or chain[UNDERMINE_MAP]) then
+  if not ns.CLASSIC_RULES and L.presets.undermine.enabled and (ns.G99Active() or chain[UNDERMINE_MAP]) then
     -- Your own ground mounts here replace the G-99; empty row = G-99.
     local e = Pick(L.presets.undermine.slots, "loc:undermine")
     if e then return e, "undermine" end
@@ -517,8 +533,10 @@ function ns.LocationHere()
   local here = {}
   if select(8, GetInstanceInfo()) == AQ_INSTANCE then here.aq = true end
   local chain = MapChain()
-  if chain[UNDERMINE_MAP] or ns.G99Active() then here.undermine = true end
-  if InVashjir(chain) then here.vashjir = true end
+  if not ns.CLASSIC_RULES then
+    if chain[UNDERMINE_MAP] or ns.G99Active() then here.undermine = true end
+    if InVashjir(chain) then here.vashjir = true end
+  end
   for i, rule in ipairs(L.custom) do
     if chain[rule.mapID] then here["custom:" .. i] = true end
   end
@@ -621,7 +639,7 @@ function ns.BuildBody()
   ns.activeLocation = locKey
   local fly, ground
   if not loc then
-    fly = on("flying") and (Pick(ns.Slots("flying"), "flying") or RandomFavorite(true)) or nil
+    fly = ns.HAS_FLYING and on("flying") and (Pick(ns.Slots("flying"), "flying") or RandomFavorite(true)) or nil
     ground = on("ground") and (Pick(ns.Slots("ground"), "ground") or RandomFavorite(false)) or nil
   end
 
@@ -656,7 +674,7 @@ function ns.BuildBody()
   local defaultName = default and ns.EntryInfo(default)
   -- Mid-air clicks do nothing, unless the player allowed dismounting while
   -- flying (glides, fall-damage achievements).
-  local airDrop = ns.AllowFlyingDismount()
+  local airDrop = ns.HAS_FLYING and ns.AllowFlyingDismount()
   local head = airDrop and "" or "[flying];"
   if defaultName then
     table.insert(clauses, 1, { "[mounted]", defaultName })
