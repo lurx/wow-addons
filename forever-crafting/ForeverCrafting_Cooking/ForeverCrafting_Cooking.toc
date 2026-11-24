@@ -1,0 +1,25 @@
+## Interface: 16001
+## Title: Forever Crafting - Cooking
+## Notes: Cooking guide, recipe collection and shopping list for Forever Crafting.
+## Author: Rotem
+## Category: Professions
+## Category-deDE: Berufe
+## Category-esES: Profesiones
+## Category-esMX: Profesiones
+## Category-frFR: Métiers
+## Category-koKR: 전문 기술
+## Category-ruRU: Профессии
+## Category-zhCN: 专业
+## Category-zhTW: 專業技能
+## Version: 0.9.0-beta
+## Dependencies: ForeverCrafting
+## LoadOnDemand: 1
+## X-ForeverCrafting-SkillLines: 185
+## IconTexture: Interface\Icons\INV_Misc_Food_15
+## AllowLoadGameType: camelot
+
+Locales\enUS.lua
+Data\Recipes.lua
+Data\Sources.lua
+Data\Guide.lua
+Register.lua
