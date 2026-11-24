@@ -30,34 +30,40 @@ local OWNERS = {
     [12] = { 333 },           -- Enchanting
 }
 
--- Whether a recipe reagent is a material of one of your professions. Potions, food and
+-- Whether a recipe reagent is a material of the profession `line`. Potions, food and
 -- drink are never leftovers as reagents: you use them. (A module still lists the things
 -- its own recipes make, so an alchemist sees spare potions.)
-function FC.IsOwnMaterial(id)
+function FC.IsOwnMaterial(id, line)
     local _, _, _, _, _, classID, subclassID = C_Item.GetItemInfoInstant(id)
     if not classID then return true end
     if classID == 0 then return false end
     local owners = classID == 7 and OWNERS[subclassID]
     if not owners then return true end
-    for _, line in ipairs(owners) do
-        if FC:GetSkill(line) then return true end
+    for _, owner in ipairs(owners) do
+        if owner == line then return true end
     end
     return false
 end
 
+-- Leftovers are per profession: only the open module's materials are listed, but
+-- anything another of your guides still needs is kept back.
 local function collect()
     local candidates, earmarked = {}, {}
+    local current = FC.modules[FC.Window.current.module]
+    local line = current and current.mainSkillLine
+    if current and current.CandidateItems then
+        for id in pairs(current:CandidateItems()) do candidates[id] = true end
+    end
     for _, key in ipairs(FC.moduleOrder) do
         local mod = FC.modules[key]
-        if mod.CandidateItems then
-            for id in pairs(mod:CandidateItems()) do candidates[id] = true end
-        end
         if mod.Earmarked then
             for id, n in pairs(mod:Earmarked()) do earmarked[id] = (earmarked[id] or 0) + n end
         end
     end
-    for id in pairs(FC.gathering or {}) do candidates[id] = true end
-    for id in pairs(TOOLS) do candidates[id] = true end
+    -- A tool shows under its own profession, or under any profession if you've dropped its own.
+    for id, toolLine in pairs(TOOLS) do
+        if toolLine == line or not FC:GetSkill(toolLine) then candidates[id] = true end
+    end
 
     local rows = {}
     for id in pairs(candidates) do
