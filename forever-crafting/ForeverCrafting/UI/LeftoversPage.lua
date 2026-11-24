@@ -18,6 +18,33 @@ local TOOLS = {
     [10498] = 202,  -- Gyromatic Micro-Adjustor (Engineering)
 }
 
+-- Trade goods that belong to a profession: [subclassID] = skill lines that use them.
+-- A recipe's reagent only counts as a leftover when you have one of those professions,
+-- so a leatherworker doesn't see herbs, cloth or ore that one odd pattern happens to use.
+local OWNERS = {
+    [5] = { 197 },            -- Cloth: Tailoring
+    [6] = { 165, 393 },       -- Leather: Leatherworking, Skinning
+    [7] = { 186, 164, 202 },  -- Metal & Stone: Mining, Blacksmithing, Engineering
+    [8] = { 185 },            -- Cooking
+    [9] = { 182, 171 },       -- Herb: Herbalism, Alchemy
+    [12] = { 333 },           -- Enchanting
+}
+
+-- Whether a recipe reagent is a material of one of your professions. Potions, food and
+-- drink are never leftovers as reagents: you use them. (A module still lists the things
+-- its own recipes make, so an alchemist sees spare potions.)
+function FC.IsOwnMaterial(id)
+    local _, _, _, _, _, classID, subclassID = C_Item.GetItemInfoInstant(id)
+    if not classID then return true end
+    if classID == 0 then return false end
+    local owners = classID == 7 and OWNERS[subclassID]
+    if not owners then return true end
+    for _, line in ipairs(owners) do
+        if FC:GetSkill(line) then return true end
+    end
+    return false
+end
+
 local function collect()
     local candidates, earmarked = {}, {}
     for _, key in ipairs(FC.moduleOrder) do

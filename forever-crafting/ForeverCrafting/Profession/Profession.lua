@@ -510,7 +510,9 @@ function mod:CandidateItems()
     local set = {}
     for _, r in pairs(ns.recipes) do
         if r.item then set[r.item] = true end
-        for _, re in ipairs(r.reagents) do set[re[1]] = true end
+        for _, re in ipairs(r.reagents) do
+            if FC.IsOwnMaterial(re[1]) then set[re[1]] = true end
+        end
     end
     return set
 end
