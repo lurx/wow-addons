@@ -327,7 +327,7 @@ function ForeverCrafting_OnAddonCompartmentClick(_, button)
 end
 
 -- Support link (Ko-fi). Placeholder until the page is ready: change it here only.
-FC.SUPPORT_URL = "https://ko-fi.com/example"
+FC.SUPPORT_URL = "https://ko-fi.com/lurxie"
 FC.SUPPORT_ICON = "Interface\\Icons\\INV_Drink_04"
 
 -- A small dialog with a link selected and ready to copy (the game can't open a browser).
