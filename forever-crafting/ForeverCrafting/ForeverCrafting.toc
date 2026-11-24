@@ -1,0 +1,48 @@
+## Interface: 16001
+## Title: Forever Crafting
+## Notes: Shared core for the Forever Crafting profession modules: guides, recipe collections and shopping lists.
+## Author: Rotem
+## Category: Professions
+## Category-deDE: Berufe
+## Category-esES: Profesiones
+## Category-esMX: Profesiones
+## Category-frFR: Métiers
+## Category-koKR: 전문 기술
+## Category-ruRU: Профессии
+## Category-zhCN: 专业
+## Category-zhTW: 專業技能
+## Version: 0.9.0-beta
+## IconTexture: Interface\AddOns\ForeverCrafting\Media\Icon
+## SavedVariables: ForeverCraftingDB
+## SavedVariablesPerCharacter: ForeverCraftingCharDB
+## OptionalDeps: Auctionator, Auc-Advanced, TomTom, Syndicator
+## AddonCompartmentFunc: ForeverCrafting_OnAddonCompartmentClick
+## AllowLoadGameType: camelot
+
+Locales\enUS.lua
+Locales\Locales.lua
+Core.lua
+Util.lua
+Prices.lua
+Value.lua
+MadeFrom.lua
+Gathering.lua
+Inventory.lua
+UI\Style.lua
+UI\Widgets.lua
+UI\MapPins.lua
+UI\MapPins.xml
+UI\Window.lua
+UI\Settings.lua
+UI\Minimap.lua
+UI\ProfessionButton.lua
+UI\AuctionScan.lua
+UI\Tooltip.lua
+UI\CraftBar.lua
+UI\LeftoversPage.lua
+Profession\Strings.lua
+Profession\Profession.lua
+Profession\Gatherer.lua
+Profession\GuidePage.lua
+Profession\RecipesPage.lua
+Profession\ShoppingPage.lua

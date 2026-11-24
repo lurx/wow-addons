@@ -1,0 +1,15 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/">
+    <Frame name="ForeverCraftingPinTemplate" mixin="ForeverCraftingPinMixin" virtual="true">
+        <Size x="22" y="22"/>
+        <Layers>
+            <Layer level="OVERLAY">
+                <Texture parentKey="Icon" file="Interface\AddOns\ForeverCrafting\Media\Pin" setAllPoints="true"/>
+            </Layer>
+        </Layers>
+        <Scripts>
+            <OnLoad method="OnLoad"/>
+            <OnEnter method="OnMouseEnter"/>
+            <OnLeave method="OnMouseLeave"/>
+        </Scripts>
+    </Frame>
+</Ui>
