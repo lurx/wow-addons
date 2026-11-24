@@ -59,17 +59,8 @@ local function create()
     gear:SetScript("OnEnter", function(self) UI.TextTooltip(self, L["Settings"]) end)
     gear:SetScript("OnLeave", GameTooltip_Hide)
 
-    -- Profession switcher (only shown with more than one module).
-    local switch = UI.Button(f, "", 150, 22)
-    switch:SetPoint("TOPRIGHT", gear, "TOPLEFT", -8, 0)
-    switch:SetScript("OnClick", function()
-        local order = FC.moduleOrder
-        if #order < 2 then return end
-        local idx = 1
-        for i, k in ipairs(order) do if k == W.current.module then idx = i end end
-        W:Open(order[idx % #order + 1])
-    end)
-    f.switch = switch
+    -- Profession tabs down the right edge, like the game's profession window.
+    f.profTabs = {}
 
     -- Page tabs row
     local tabs = CreateFrame("Frame", nil, f)
@@ -160,6 +151,55 @@ function W:BuildTabs(mod)
     end
 end
 
+-- One square icon tab per loaded profession, on the outside of the right edge.
+-- Hidden when only one profession is loaded.
+local TAB_SIZE, TAB_GAP, TAB_TOP = 36, 8, -64
+function W:BuildProfessionTabs()
+    local f = self.frame
+    local order = FC.moduleOrder
+    for _, t in ipairs(f.profTabs) do t:Hide() end
+    if #order < 2 then return end
+    for i, key in ipairs(order) do
+        local mod = FC.modules[key]
+        local t = f.profTabs[i]
+        if not t then
+            t = CreateFrame("Button", nil, f)
+            t:SetSize(TAB_SIZE, TAB_SIZE)
+            t:SetPoint("TOPLEFT", f, "TOPRIGHT", -2, TAB_TOP - (i - 1) * (TAB_SIZE + TAB_GAP))
+            -- Leather backing a little larger than the icon, so it reads as a tab.
+            local back = t:CreateTexture(nil, "BACKGROUND")
+            back:SetPoint("TOPLEFT", -3, 3)
+            back:SetPoint("BOTTOMRIGHT", 5, -3)
+            back:SetColorTexture(0.22, 0.13, 0.06, 1)
+            local rim = t:CreateTexture(nil, "BORDER")
+            rim:SetPoint("TOPLEFT", -1, 1)
+            rim:SetPoint("BOTTOMRIGHT", 1, -1)
+            rim:SetColorTexture(0.45, 0.28, 0.12, 1)
+            t.icon = t:CreateTexture(nil, "ARTWORK")
+            t.icon:SetAllPoints()
+            t.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+            t:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+            t.selected = t:CreateTexture(nil, "OVERLAY")
+            t.selected:SetTexture("Interface\\Buttons\\CheckButtonHilight")
+            t.selected:SetBlendMode("ADD")
+            t.selected:SetAllPoints()
+            t:SetScript("OnClick", function(self) W:Open(self.key) end)
+            t:SetScript("OnEnter", function(self)
+                local m = FC.modules[self.key]
+                UI.TextTooltip(self, m.title, m.Subtitle and { m:Subtitle() } or nil)
+            end)
+            t:SetScript("OnLeave", GameTooltip_Hide)
+            f.profTabs[i] = t
+        end
+        t.key = key
+        t.icon:SetTexture(mod.icon)
+        local on = key == self.current.module
+        t.selected:SetShown(on)
+        t.icon:SetVertexColor(on and 1 or 0.85, on and 1 or 0.85, on and 1 or 0.85)
+        t:Show()
+    end
+end
+
 function W:Open(moduleKey, pageKey)
     local f = self.frame or create()
     moduleKey = moduleKey or self.current.module or FC.moduleOrder[1]
@@ -206,16 +246,7 @@ function W:Draw(keepScroll)
     f.title:SetText(mod and mod.title or L["Forever Crafting"])
     f.subtitle:SetText(mod and mod.Subtitle and mod:Subtitle() or ("v" .. FC.version))
 
-    if #FC.moduleOrder > 1 then
-        local nextKey
-        for i, k in ipairs(FC.moduleOrder) do
-            if k == self.current.module then nextKey = FC.moduleOrder[i % #FC.moduleOrder + 1] end
-        end
-        f.switch.text:SetText(nextKey and FC.modules[nextKey].shortTitle or "")
-        f.switch:Show()
-    else
-        f.switch:Hide()
-    end
+    self:BuildProfessionTabs()
 
     self:BuildTabs(mod)
     for _, b in ipairs(self.pageTabs) do b:SetSelected(b.pageKey == page.key) end
